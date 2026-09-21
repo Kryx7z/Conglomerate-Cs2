@@ -17,8 +17,6 @@ static bool SafeCallCreateMaterial(CStrongHandle<CMaterial2>* pOut, const char* 
 
     __try
     {
-        // Match the working ChamsV4 ABI: the material-system interface is the
-        // first argument, followed by the strong-handle output and KV3 object.
         I::CreateMaterial(I::MaterialSystem2, pOut, name, pKeyValues3, nullptr, 1U);
         return pOut && *pOut != nullptr;
     }
@@ -352,7 +350,7 @@ void __fastcall chams::hook(void* a1, void* a2, CMeshData* pMeshScene, int nMesh
     }
     __except (EXCEPTION_EXECUTE_HANDLER)
     {
-        // NOTE: deliberately NOT calling original() here - if this still crashes,
+        // NOTE: deliberately NOT calling original() here. if this still crashes,
         // calling original() would too (that's what crashed originally, even on
         // the shortest code path). The DrawArray address itself has since been
         // independently re-verified as correct against a fresh signature dump,

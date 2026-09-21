@@ -1,9 +1,5 @@
 #include "config.h"
 
-// CBA to make proper atm, it's 03:42 right now.
-// For now just stores config values don't mind it too much
-//
-// (FYI THIS IS A HORRID SOLUTION BUT FUNCTIONS) 
 
 namespace Config {
 	bool esp = false;
@@ -41,8 +37,8 @@ namespace Config {
 	float espThickness = 1.0f;
 	float espFillOpacity = 0.5f;
 	ImVec4 espColor = ImVec4(1, 0, 0, 1);
-	ImVec4 espColorT = ImVec4(0.92f, 0.55f, 0.15f, 1.0f);  // orange, matches T side
-	ImVec4 espColorCT = ImVec4(0.25f, 0.55f, 0.95f, 1.0f); // blue, matches CT side
+	ImVec4 espColorT = ImVec4(0.92f, 0.55f, 0.15f, 1.0f);  
+	ImVec4 espColorCT = ImVec4(0.25f, 0.55f, 0.95f, 1.0f); 
 
 	bool fovEnabled = false;
 	float fov = 90.0f;

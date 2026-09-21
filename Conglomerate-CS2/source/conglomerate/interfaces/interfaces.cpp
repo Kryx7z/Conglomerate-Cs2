@@ -69,9 +69,6 @@ bool I::Interfaces::init()
     GameEntity = I::Get<IGameResourceService>(("engine2.dll"), "GameResourceServiceClientV001");
     success &= (GameEntity != nullptr);
 
-	// Source 2 keeps relative-mouse mode on a separate input-system object.
-	// Velocity disables it while its menu is open so the game cannot consume
-	// mouse deltas as camera movement.
 	InputSystem = I::Get<void>("inputsystem.dll", "InputSystemVersion001");
 
 	if (enableInputFeatures)

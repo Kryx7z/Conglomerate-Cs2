@@ -332,7 +332,6 @@ void Visuals::esp() {
             );
         }
 
-        // ESP Box - only render if Config::esp is enabled
         if (Config::esp) {
             drawList->AddRect(
                 ImVec2(boxX, boxY),
@@ -344,9 +343,6 @@ void Visuals::esp() {
             );
         }
 
-        // Do not inherit the menu font's full size.  ESP is rendered in the
-        // background draw list, so using the current ImGui size directly made
-        // the result change with menu scaling and ignored the visual tuning.
         const float espFontSize = std::clamp(ImGui::GetFontSize() * 0.65f, 8.0f, 10.0f);
         ImFont* espFont = ImGui::GetFont();
 
@@ -371,9 +367,6 @@ void Visuals::esp() {
 
         // Health Bar
         if (Config::showHealth) {
-            // The game can hand back health outside 0..100 (overkill damage,
-            // spectator states). Both the bar geometry and the colour ramp
-            // below assume that range, and the ramp went negative past 100.
             const int health = std::clamp(Player.health, 0, 100);
             const float healthHeight = boxHeight * (static_cast<float>(health) / 100.0f);
             const float barWidth = 1.25f;
@@ -407,15 +400,12 @@ void Visuals::esp() {
             float nameX = boxX + (boxWidth - nameSize.x) / 2;
             float nameY = boxY - nameSize.y - 2;
 
-            // Small outlined name, centered over the player.
             drawList->AddText(espFont, espFontSize, ImVec2(nameX + 1, nameY + 1),
                 IM_COL32(0, 0, 0, 255), playerName.c_str());
             drawList->AddText(espFont, espFontSize, ImVec2(nameX, nameY),
                 IM_COL32(255, 255, 255, 255), playerName.c_str());
         }
 
-        // Weapon text is centered underneath the player. Only status flags
-        // remain in the right-side stack, matching the reference layout.
         if (Config::flags)
         {
             const auto weaponLabel = FormatWeaponName(Player.weapon_name);
@@ -429,8 +419,6 @@ void Visuals::esp() {
             }
         }
 
-        // C4 is tied to the carrier's inventory, not the currently selected
-        // weapon, so it remains visible while the carrier switches weapons.
         if (Config::flags && Player.carriesC4)
         {
             constexpr ImU32 c4Color = IM_COL32(255, 0, 0, 255);

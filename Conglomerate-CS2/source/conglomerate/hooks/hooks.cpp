@@ -206,8 +206,6 @@ void __fastcall H::hkCreateMove(void* input, unsigned int slot, std::int64_t act
 	static auto original = CreateMove.GetOriginal();
 	const bool menuOpen = UiState::menuOpen;
 
-	// Synchronize the menu input lock every tick. This clears the lock as soon
-	// as the menu closes, so gameplay input (including attack) is restored.
 	PrepareInputSafe(input, menuOpen);
 
 	if (original)
@@ -273,10 +271,18 @@ void H::Hooks::init() {
 	if (const auto handleViewAngles = ResolveHandleViewAngles())
 		HandleViewAngles.Add(reinterpret_cast<void*>(handleViewAngles), reinterpret_cast<void*>(&hkHandleViewAngles));
 
-	UpdateWallsObject.Add((void*)scan("scenesystem", "48 8B C4 48 89 50 ? 48 89 48 ? 55 53 56 57 41 54 41 55 41 56 41 57 48 8D A8 ? ? ? ? 48 81 EC ? ? ? ? 0F 29 70"), &hkUpdateSceneObject);
-	FrameStageNotify.Add((void*)scan("client", "48 89 5C 24 ? 48 89 6C 24 ? 57 48 83 EC 40 48 8B F9 33 ED"), &hkFrameStageNotify);
+	const uintptr_t updateWallsObject = scan(
+		"scenesystem", "48 8B C4 48 89 50 ? 48 89 48 ? 55 53 56 57 41 54 41 55 41 56 41 57 48 8D A8 ? ? ? ? 48 81 EC ? ? ? ? 0F 29 70");
+	if (IsExecutableAddress(reinterpret_cast<void*>(updateWallsObject)))
+		UpdateWallsObject.Add(reinterpret_cast<void*>(updateWallsObject), &hkUpdateSceneObject);
+
+	const uintptr_t frameStageNotify = scan(
+		"client", "48 89 5C 24 ? 48 89 6C 24 ? 57 48 83 EC 40 48 8B F9 33 ED");
+	if (IsExecutableAddress(reinterpret_cast<void*>(frameStageNotify)))
+		FrameStageNotify.Add(reinterpret_cast<void*>(frameStageNotify), &hkFrameStageNotify);
 	const uintptr_t drawArray = scan("scenesystem", "48 8B C4 53 57 41 54 48 81 EC D0 00 00 00 49 63 F9 49");
-	DrawArray.Add((void*)drawArray, &chams::hook);
+	if (IsExecutableAddress(reinterpret_cast<void*>(drawArray)))
+		DrawArray.Add(reinterpret_cast<void*>(drawArray), &chams::hook);
 	const uintptr_t lightSceneCall = scan(
 		"scenesystem", "E8 ? ? ? ? 44 0F 28 5C 24 60");
 	const uintptr_t lightSceneObject = lightSceneCall
@@ -284,7 +290,9 @@ void H::Hooks::init() {
 		: 0;
     const uintptr_t lightSceneFallback = reinterpret_cast<uintptr_t>(
         M::FindPattern("scenesystem", "48 89 54 24 ? 55 57 41 56 48 83 EC"));
-	UpdateLightObject.Add(reinterpret_cast<void*>(lightSceneObject ? lightSceneObject : lightSceneFallback), &hkUpdateLightObject);
+	const uintptr_t updateLightObject = lightSceneObject ? lightSceneObject : lightSceneFallback;
+	if (IsExecutableAddress(reinterpret_cast<void*>(updateLightObject)))
+		UpdateLightObject.Add(reinterpret_cast<void*>(updateLightObject), &hkUpdateLightObject);
 	const uintptr_t drawScenePattern = scan(
 		"scenesystem", "48 8D 05 ? ? ? ? 48 89 07 48 8B 7C 24 48");
 	const uintptr_t drawSceneObject = drawScenePattern
@@ -292,13 +300,16 @@ void H::Hooks::init() {
 		: 0;
 	if (drawSceneObject)
 		DrawSceneObject.Add(reinterpret_cast<void*>(drawSceneObject), &hkDrawSceneObject);
-	DrawSkyboxArray.Add((void*)scan("scenesystem", "45 85 C9 0F 8E ? ? ? ? 4C 8B DC"), &hkDrawSkyboxArray);
+	const uintptr_t drawSkyboxArray = scan("scenesystem", "45 85 C9 0F 8E ? ? ? ? 4C 8B DC");
+	if (IsExecutableAddress(reinterpret_cast<void*>(drawSkyboxArray)))
+		DrawSkyboxArray.Add(reinterpret_cast<void*>(drawSkyboxArray), &hkDrawSkyboxArray);
 	const uintptr_t renderSmokeCall = scan(
 		"client", "5C 24 28 48 89 44 24 20 E8 ? ? ? ? 48 8B 5C 24 60");
 	const uintptr_t renderSmoke = renderSmokeCall
 		? M::getAbsoluteAddress(renderSmokeCall, 0x9)
 		: 0;
-	RenderSmoke.Add((void*)renderSmoke, &hkRenderSmoke);
+	if (IsExecutableAddress(reinterpret_cast<void*>(renderSmoke)))
+		RenderSmoke.Add(reinterpret_cast<void*>(renderSmoke), &hkRenderSmoke);
 	uintptr_t renderFov = scan(
 		"client", "40 53 48 83 EC ? 48 8B D9 E8 ? ? ? ? 48 85 C0 74 ? 48 8B C8 48 83 C4");
 	if (!renderFov)
@@ -306,7 +317,8 @@ void H::Hooks::init() {
 		renderFov = scan(
 			"client", "40 53 48 83 EC 50 48 8B D9 E8 ? ? ? ? 48 85 C0 74 ? 48 8B C8 48 83 C4 50 5B E9");
 	}
-	GetRenderFov.Add((void*)renderFov, &hkGetRenderFov);
+	if (IsExecutableAddress(reinterpret_cast<void*>(renderFov)))
+		GetRenderFov.Add(reinterpret_cast<void*>(renderFov), &hkGetRenderFov);
 	// The camera view-setup path is separate from GetRenderFov on recent builds
 	// and is what resets the view when AUG/SG are equipped. Resolve the current
 	// view function only when the candidate is executable; this keeps older
@@ -318,8 +330,15 @@ void H::Hooks::init() {
 		if (viewTarget)
 			OverrideView.Add(reinterpret_cast<void*>(viewTarget), reinterpret_cast<void*>(&hkOverrideView));
 	}
-	LevelInit.Add((void*)scan("client", "40 55 56 41 56 48 8D 6C 24 ? 48 81 EC ? ? ? ? 48"), &hkLevelInit);
-	RenderFlashBangOverlay.Add((void*)scan("client", "85 D2 0F 88 ? ? ? ? 48 89 4C 24 ? 55 56"), &hkRenderFlashbangOverlay);
+	const uintptr_t levelInit = scan(
+		"client", "40 55 56 41 56 48 8D 6C 24 ? 48 81 EC ? ? ? ? 48");
+	if (IsExecutableAddress(reinterpret_cast<void*>(levelInit)))
+		LevelInit.Add(reinterpret_cast<void*>(levelInit), &hkLevelInit);
+
+	const uintptr_t renderFlashBangOverlay = scan(
+		"client", "85 D2 0F 88 ? ? ? ? 48 89 4C 24 ? 55 56");
+	if (IsExecutableAddress(reinterpret_cast<void*>(renderFlashBangOverlay)))
+		RenderFlashBangOverlay.Add(reinterpret_cast<void*>(renderFlashBangOverlay), &hkRenderFlashbangOverlay);
 
 	MH_EnableHook(MH_ALL_HOOKS);
 }

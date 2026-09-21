@@ -1,13 +1,10 @@
 #include <algorithm>
-#include <array>
 #include <cstdint>
 #include <unordered_map>
 #include <cstring>
 #include <Windows.h>
 #include "../../hooks/hooks.h"
-#include "../../players/players.h"
 #include "../../config/config.h"
-#include "../../../../external/imgui/imgui.h"
 #include "../../interfaces/interfaces.h"
 #include "../../utils/memory/patternscan/patternscan.h"
 #include "../../utils/memory/gaa/gaa.h"
@@ -40,26 +37,66 @@ struct C_ByteColor4
 
 namespace
 {
-    template <typename T>
-    static bool readMemory(std::uintptr_t address, T& value)
+    static std::uint8_t colorByte(float component)
     {
-        if (!address)
-            return false;
+        component = std::clamp(component, 0.0f, 1.0f);
+        return static_cast<std::uint8_t>(component * 255.0f);
+    }
 
-        SIZE_T bytesRead = 0;
-        return ReadProcessMemory(GetCurrentProcess(), reinterpret_cast<const void*>(address),
-            &value, sizeof(T), &bytesRead) != FALSE && bytesRead == sizeof(T);
+    static C_ByteColor4 configuredNightColor()
+    {
+        return {
+            colorByte(Config::NightColor.x),
+            colorByte(Config::NightColor.y),
+            colorByte(Config::NightColor.z),
+            255
+        };
     }
 
     template <typename T>
-    static bool writeMemory(std::uintptr_t address, const T& value)
+    static bool readMemory(std::uintptr_t address, T& value) noexcept
     {
         if (!address)
             return false;
 
+#if defined(CONGLOMERATE_DEBUG_SAFE_MEMORY)
+        SIZE_T bytesRead = 0;
+        return ReadProcessMemory(GetCurrentProcess(), reinterpret_cast<const void*>(address),
+            &value, sizeof(T), &bytesRead) != FALSE && bytesRead == sizeof(T);
+#else
+        __try
+        {
+            value = *reinterpret_cast<const T*>(address);
+            return true;
+        }
+        __except (EXCEPTION_EXECUTE_HANDLER)
+        {
+            return false;
+        }
+#endif
+    }
+
+    template <typename T>
+    static bool writeMemory(std::uintptr_t address, const T& value) noexcept
+    {
+        if (!address)
+            return false;
+
+#if defined(CONGLOMERATE_DEBUG_SAFE_MEMORY)
         SIZE_T bytesWritten = 0;
         return WriteProcessMemory(GetCurrentProcess(), reinterpret_cast<void*>(address),
             &value, sizeof(T), &bytesWritten) != FALSE && bytesWritten == sizeof(T);
+#else
+        __try
+        {
+            *reinterpret_cast<T*>(address) = value;
+            return true;
+        }
+        __except (EXCEPTION_EXECUTE_HANDLER)
+        {
+            return false;
+        }
+#endif
     }
 
     static std::uintptr_t resolveLightDataQueueGlobal()
@@ -75,9 +112,6 @@ namespace
 		if (!objects)
 			return false;
 
-		// Match Velocity's aggregate layout directly. The third argument is an
-		// object-array pointer; its data pointer is at +0x8, count at +0x4 and
-		// the light-record start index at +0x30.
 		const auto objectArray = reinterpret_cast<std::uintptr_t>(objects);
 		std::uintptr_t objectData = 0;
 		if (!readMemory(objectArray + 0x8u, objectData) || !objectData)
@@ -88,8 +122,6 @@ namespace
 		if (queueGlobal)
 			readMemory(queueGlobal, queue);
 
-		// Keep the interface as a fallback for builds where the global pattern
-		// is not present.
 		if (!queue && I::SceneSystem)
 		{
 			readMemory(reinterpret_cast<std::uintptr_t>(I::SceneSystem) +
@@ -110,9 +142,9 @@ namespace
 		return readMemory(address, color);
 	}
 
-	static void writeSceneColor(std::uintptr_t address, const C_ByteColor4& color)
+	static bool writeSceneColor(std::uintptr_t address, const C_ByteColor4& color) noexcept
 	{
-		(void)writeMemory(address, color);
+		return writeMemory(address, color);
 	}
 
 	static bool isSkyOverlayMaterial(std::uintptr_t material)
@@ -158,16 +190,8 @@ static void applyNightModeColoring(c_aggregate_object_array* objects)
 	if (!readSceneBatch(objects, lightBase, count, startIndex))
 		return;
 
-	const C_ByteColor4 configured{
-		static_cast<std::uint8_t>(std::clamp(Config::NightColor.x * 255.0f, 0.0f, 255.0f)),
-		static_cast<std::uint8_t>(std::clamp(Config::NightColor.y * 255.0f, 0.0f, 255.0f)),
-		static_cast<std::uint8_t>(std::clamp(Config::NightColor.z * 255.0f, 0.0f, 255.0f)),
-		255
-	};
+	const C_ByteColor4 configured = configuredNightColor();
 
-	// Match Velocity: replace RGB with the configured world color after the
-	// engine has filled the aggregate records, while retaining each record's
-	// alpha. This is idempotent and does not progressively remove contrast.
 	for (int i = 0; i < count; ++i)
 	{
 		const auto address = lightBase + (static_cast<std::uintptr_t>(startIndex + i) << 5);
@@ -183,7 +207,7 @@ void __fastcall H::hkUpdateSceneObject(void* a1, void* a2, c_aggregate_object_ar
 	if (!original)
 		return;
 
-	// Always call the real game function first and keep its result - this
+	// Always call the real game function first and keep its result. This
 	// must never be skipped or lost, or the game itself could misbehave.
 	original(a1, a2, a3);
 	applyNightModeColoring(a3);
@@ -192,34 +216,18 @@ void __fastcall H::hkUpdateSceneObject(void* a1, void* a2, c_aggregate_object_ar
 static bool readSkyState(std::uintptr_t address, std::uint32_t tintOffset,
     std::uint32_t lightingOffset, std::uint32_t brightnessOffset, SkyState& out)
 {
-    __try
-    {
-        out.tint = *reinterpret_cast<SkyColor*>(address + tintOffset);
-        out.lighting = *reinterpret_cast<SkyColor*>(address + lightingOffset);
-        out.brightness = *reinterpret_cast<float*>(address + brightnessOffset);
-        return true;
-    }
-    __except (EXCEPTION_EXECUTE_HANDLER)
-    {
-        return false;
-    }
+    return readMemory(address + tintOffset, out.tint) &&
+        readMemory(address + lightingOffset, out.lighting) &&
+        readMemory(address + brightnessOffset, out.brightness);
 }
 
 static bool writeSkyState(std::uintptr_t address, std::uint32_t tintOffset,
     std::uint32_t lightingOffset, std::uint32_t brightnessOffset,
     const SkyColor& tint, const SkyColor& lighting, float brightness)
 {
-    __try
-    {
-        *reinterpret_cast<SkyColor*>(address + tintOffset) = tint;
-        *reinterpret_cast<SkyColor*>(address + lightingOffset) = lighting;
-        *reinterpret_cast<float*>(address + brightnessOffset) = brightness;
-        return true;
-    }
-    __except (EXCEPTION_EXECUTE_HANDLER)
-    {
-        return false;
-    }
+    return writeMemory(address + tintOffset, tint) &&
+        writeMemory(address + lightingOffset, lighting) &&
+        writeMemory(address + brightnessOffset, brightness);
 }
 
 static bool isSkyEntity(C_BaseEntity* entity)
@@ -242,51 +250,49 @@ static bool isSkyEntity(C_BaseEntity* entity)
 
 static bool prepareSkyboxColor(void* meshArray, int meshCount)
 {
-    __try
-    {
-        if (!meshArray || meshCount <= 0 || meshCount > (1 << 20))
-            return false;
+    if (!meshArray || meshCount <= 0 || meshCount > (1 << 20))
+        return false;
 
-        const auto meshBase = reinterpret_cast<std::uintptr_t>(meshArray);
-        const auto descriptor = *reinterpret_cast<std::uintptr_t*>(
-            meshBase + (static_cast<std::uintptr_t>(meshCount) * 0x70u) - 0x58u);
-        if (descriptor < 0x10000u || descriptor > 0x00007FFFFFFFFFFFull)
-            return false;
+    const auto meshBase = reinterpret_cast<std::uintptr_t>(meshArray);
+    std::uintptr_t descriptor = 0;
+    if (!readMemory(meshBase + (static_cast<std::uintptr_t>(meshCount) * 0x70u) - 0x58u, descriptor))
+        return false;
+    if (descriptor < 0x10000u || descriptor > 0x00007FFFFFFFFFFFull)
+        return false;
 
-        activeSkyboxColorAddress = descriptor + 0xE8u;
-        auto* color = reinterpret_cast<float*>(activeSkyboxColorAddress);
-        activeSkyboxOriginalColor[0] = color[0];
-        activeSkyboxOriginalColor[1] = color[1];
-        activeSkyboxOriginalColor[2] = color[2];
-
-        // Match the dark-blue sky used by the intended night-mode look.
-        color[0] = 12.0f / 255.0f;
-        color[1] = 24.0f / 255.0f;
-        color[2] = 55.0f / 255.0f;
-        return true;
-    }
-    __except (EXCEPTION_EXECUTE_HANDLER)
+    activeSkyboxColorAddress = descriptor + 0xE8u;
+    if (!readMemory(activeSkyboxColorAddress + 0x0u, activeSkyboxOriginalColor[0]) ||
+        !readMemory(activeSkyboxColorAddress + 0x4u, activeSkyboxOriginalColor[1]) ||
+        !readMemory(activeSkyboxColorAddress + 0x8u, activeSkyboxOriginalColor[2]))
     {
         activeSkyboxColorAddress = 0;
         return false;
     }
+
+    const float nightColor[3] = {
+        12.0f / 255.0f,
+        24.0f / 255.0f,
+        55.0f / 255.0f
+    };
+    if (!writeMemory(activeSkyboxColorAddress + 0x0u, nightColor[0]) ||
+        !writeMemory(activeSkyboxColorAddress + 0x4u, nightColor[1]) ||
+        !writeMemory(activeSkyboxColorAddress + 0x8u, nightColor[2]))
+    {
+        activeSkyboxColorAddress = 0;
+        return false;
+    }
+
+    return true;
 }
 
 static void restoreSkyboxColor()
 {
-    __try
-    {
-        if (!activeSkyboxColorAddress)
-            return;
+    if (!activeSkyboxColorAddress)
+        return;
 
-        auto* color = reinterpret_cast<float*>(activeSkyboxColorAddress);
-        color[0] = activeSkyboxOriginalColor[0];
-        color[1] = activeSkyboxOriginalColor[1];
-        color[2] = activeSkyboxOriginalColor[2];
-    }
-    __except (EXCEPTION_EXECUTE_HANDLER)
-    {
-    }
+    writeMemory(activeSkyboxColorAddress + 0x0u, activeSkyboxOriginalColor[0]);
+    writeMemory(activeSkyboxColorAddress + 0x4u, activeSkyboxOriginalColor[1]);
+    writeMemory(activeSkyboxColorAddress + 0x8u, activeSkyboxOriginalColor[2]);
 
     activeSkyboxColorAddress = 0;
 }
@@ -296,16 +302,10 @@ static void applyNightLightColor(void* object)
 	if (!Config::Night || !object)
 		return;
 
-	__try
-	{
-		const auto address = reinterpret_cast<std::uintptr_t>(object);
-		*reinterpret_cast<float*>(address + 0xE4u) = Config::NightColor.x;
-		*reinterpret_cast<float*>(address + 0xE8u) = Config::NightColor.y;
-		*reinterpret_cast<float*>(address + 0xECu) = Config::NightColor.z;
-	}
-	__except (EXCEPTION_EXECUTE_HANDLER)
-	{
-	}
+	const auto address = reinterpret_cast<std::uintptr_t>(object);
+	writeMemory(address + 0xE4u, Config::NightColor.x);
+	writeMemory(address + 0xE8u, Config::NightColor.y);
+	writeMemory(address + 0xECu, Config::NightColor.z);
 }
 
 static void applyNightPrimitiveColor(void* batch, int batchCount)
@@ -313,21 +313,24 @@ static void applyNightPrimitiveColor(void* batch, int batchCount)
 	if (!Config::Night || !batch || batchCount <= 0 || batchCount > (1 << 20))
 		return;
 
-	const C_ByteColor4 configured{
-		static_cast<std::uint8_t>(std::clamp(Config::NightColor.x * 255.0f, 0.0f, 255.0f)),
-		static_cast<std::uint8_t>(std::clamp(Config::NightColor.y * 255.0f, 0.0f, 255.0f)),
-		static_cast<std::uint8_t>(std::clamp(Config::NightColor.z * 255.0f, 0.0f, 255.0f)),
-		255
-	};
+	const C_ByteColor4 configured = configuredNightColor();
 
 	const auto base = reinterpret_cast<std::uintptr_t>(batch);
+	std::uintptr_t cachedMaterial = 0;
+	bool cachedOverlay = false;
 	for (int i = 0; i < batchCount; ++i)
 	{
-		// Velocity's draw_scene_object path uses 0x70-byte scene primitives,
-		// reads their material at +0x20 and writes packed color at +0x50.
 		const auto mesh = base + (static_cast<std::uintptr_t>(i) * 0x70u);
 		std::uintptr_t material = 0;
-		if (!readMemory(mesh + 0x20u, material) || isSkyOverlayMaterial(material))
+		if (!readMemory(mesh + 0x20u, material))
+			continue;
+
+		if (material != cachedMaterial)
+		{
+			cachedMaterial = material;
+			cachedOverlay = isSkyOverlayMaterial(material);
+		}
+		if (cachedOverlay)
 			continue;
 
 		const auto colorAddress = mesh + 0x50u;
@@ -352,8 +355,6 @@ std::uintptr_t __fastcall H::hkDrawSceneObject(void* a1, void* a2, void* batch,
 	if (!original)
 		return 0;
 
-	// Match Velocity: apply the primitive color before the real renderer sees
-	// the batch, so the sky/world materials are shaded consistently.
 	applyNightPrimitiveColor(batch, batchCount);
 	return original(a1, a2, batch, batchCount, a5, a6, a7, a8);
 }
@@ -363,54 +364,63 @@ void H::updateSky()
     if (!I::GameEntity || !I::GameEntity->Instance)
         return;
 
-    const auto tintOffset = SchemaFinder::Get("C_EnvSky->m_vTintColor");
-    const auto lightingOffset = SchemaFinder::Get("C_EnvSky->m_vTintColorLightingOnly");
-    const auto brightnessOffset = SchemaFinder::Get("C_EnvSky->m_flBrightnessScale");
+    static std::uint32_t tintOffset = 0;
+    static std::uint32_t lightingOffset = 0;
+    static std::uint32_t brightnessOffset = 0;
+    static std::uint64_t nextSkyScan = 0;
+
+    if (!tintOffset || !lightingOffset || !brightnessOffset)
+    {
+        tintOffset = SchemaFinder::Get("C_EnvSky->m_vTintColor");
+        lightingOffset = SchemaFinder::Get("C_EnvSky->m_vTintColorLightingOnly");
+        brightnessOffset = SchemaFinder::Get("C_EnvSky->m_flBrightnessScale");
+    }
+
     if (!tintOffset || !lightingOffset || !brightnessOffset)
         return;
 
-    const int highest = I::GameEntity->Instance->GetHighestEntityIndex();
-    for (int i = 1; i <= highest; ++i)
+    if (!Config::Night)
     {
-        auto* entity = I::GameEntity->Instance->Get(i);
-        if (!isSkyEntity(entity))
-            continue;
-
-        const auto address = reinterpret_cast<std::uintptr_t>(entity);
-
-        if (Config::Night)
+        for (auto it = originalSkyStates.begin(); it != originalSkyStates.end();)
         {
-            SkyState current{};
-            if (!originalSkyStates.contains(address))
-            {
-                if (!readSkyState(address, tintOffset, lightingOffset, brightnessOffset, current))
-                    continue;
-
-                originalSkyStates.emplace(address, current);
-            }
-
-            // Tint both sky fields; the lighting-only field must change too or
-            // the sky stays bright after the scene light queue is darkened.
-            const SkyColor color{ 12, 24, 55, 255 };
-            const auto original = originalSkyStates.find(address);
-            if (original != originalSkyStates.end())
-            {
-                writeSkyState(address, tintOffset, lightingOffset, brightnessOffset,
-                    color, color, std::clamp(original->second.brightness * 0.25f, 0.05f, 1.0f));
-            }
+            if (writeSkyState(it->first, tintOffset, lightingOffset, brightnessOffset,
+                it->second.tint, it->second.lighting, it->second.brightness))
+                it = originalSkyStates.erase(it);
+            else
+                ++it;
         }
-        else
+
+        nextSkyScan = 0;
+        return;
+    }
+
+    const std::uint64_t now = GetTickCount64();
+    if (now >= nextSkyScan)
+    {
+        const int highest = I::GameEntity->Instance->GetHighestEntityIndex();
+        for (int i = 1; i <= highest; ++i)
         {
-            const auto it = originalSkyStates.find(address);
-            if (it != originalSkyStates.end())
-            {
-                if (writeSkyState(address, tintOffset, lightingOffset, brightnessOffset,
-                    it->second.tint, it->second.lighting, it->second.brightness))
-                {
-                    originalSkyStates.erase(it);
-                }
-            }
+            auto* entity = I::GameEntity->Instance->Get(i);
+            if (!isSkyEntity(entity))
+                continue;
+
+            const auto address = reinterpret_cast<std::uintptr_t>(entity);
+            if (originalSkyStates.contains(address))
+                continue;
+
+            SkyState original{};
+            if (readSkyState(address, tintOffset, lightingOffset, brightnessOffset, original))
+                originalSkyStates.emplace(address, original);
         }
+
+        nextSkyScan = now + 500;
+    }
+
+    const SkyColor color{ 12, 24, 55, 255 };
+    for (const auto& [address, original] : originalSkyStates)
+    {
+        writeSkyState(address, tintOffset, lightingOffset, brightnessOffset,
+            color, color, std::clamp(original.brightness * 0.25f, 0.05f, 1.0f));
     }
 }
 
@@ -419,17 +429,18 @@ void H::updateSmoke()
     if (!Config::noSmoke || !I::GameEntity || !I::GameEntity->Instance)
         return;
 
-    // The live entity is commonly named C_SmokeGrenadeProjectile while the
-    // reflected schema class is exported as CSmokeGrenadeProjectile. Resolve
-    // both spellings so a schema rewrite cannot silently disable suppression.
-    const auto smokeTickOffset = [] {
+    static std::uint32_t smokeTickOffset = 0;
+    static std::uint32_t didSmokeOffset = 0;
+    if (!smokeTickOffset)
+    {
         const auto offset = SchemaFinder::Get("C_SmokeGrenadeProjectile->m_nSmokeEffectTickBegin");
-        return offset ? offset : SchemaFinder::Get("CSmokeGrenadeProjectile->m_nSmokeEffectTickBegin");
-    }();
-    const auto didSmokeOffset = [] {
+        smokeTickOffset = offset ? offset : SchemaFinder::Get("CSmokeGrenadeProjectile->m_nSmokeEffectTickBegin");
+    }
+    if (!didSmokeOffset)
+    {
         const auto offset = SchemaFinder::Get("C_SmokeGrenadeProjectile->m_bDidSmokeEffect");
-        return offset ? offset : SchemaFinder::Get("CSmokeGrenadeProjectile->m_bDidSmokeEffect");
-    }();
+        didSmokeOffset = offset ? offset : SchemaFinder::Get("CSmokeGrenadeProjectile->m_bDidSmokeEffect");
+    }
     if (!smokeTickOffset && !didSmokeOffset)
         return;
 
@@ -454,9 +465,12 @@ void H::updateSmoke()
 
             const auto address = reinterpret_cast<std::uintptr_t>(entity);
             if (smokeTickOffset)
-                *reinterpret_cast<int*>(address + smokeTickOffset) = -1;
+                writeMemory(address + smokeTickOffset, -1);
             if (didSmokeOffset)
-                *reinterpret_cast<bool*>(address + didSmokeOffset) = true;
+            {
+                const bool didSmoke = true;
+                writeMemory(address + didSmokeOffset, didSmoke);
+            }
         }
     }
     __except (EXCEPTION_EXECUTE_HANDLER)

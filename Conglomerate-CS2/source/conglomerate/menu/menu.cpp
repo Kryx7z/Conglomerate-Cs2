@@ -5,8 +5,7 @@
 
 #include <cstdint>
 #include <cstdio>
-#include <cstring>
-#include <iostream>
+#include <string>
 #include <vector>
 #include "../config/configmanager.h"
 
@@ -178,9 +177,6 @@ static void FormatHexColor(char* output, size_t outputSize, const ImVec4& color)
     std::snprintf(output, outputSize, "#%02X%02X%02X%02X", red, green, blue, alpha);
 }
 
-// Keep color controls compact: a preview square opens a picker with only a
-// hexadecimal input. The usual RGB and HSV numeric fields are deliberately
-// omitted from every menu color setting.
 static bool ColorEditHexOnly(const char* label, ImVec4& color)
 {
     bool valueChanged = false;
@@ -234,7 +230,6 @@ static bool ColorEditHexOnly(const char* label, ImVec4& color)
     }
     else
     {
-        // Start each newly opened picker from the current color value.
         GetColorHexEditState().editing = false;
     }
 
@@ -257,8 +252,6 @@ void Menu::init(HWND& window, ID3D11Device* pDevice, ID3D11DeviceContext* pConte
 
     ApplyImGuiTheme();
 
-    // AddFontFromFileTTF returns null when the file is missing and leaves the
-    // atlas without any font, which ImGui then asserts on / renders with.
     if (io.Fonts->AddFontFromFileTTF("C:\\Windows\\Fonts\\arial.ttf", 16.0f) == nullptr)
     {
         io.Fonts->AddFontDefault();
@@ -508,8 +501,7 @@ void Menu::toggleMenu() {
     UiState::menuOpen = showMenu;
 
     if (showMenu) {
-        // Match Velocity's menu transition: disable Source 2's relative
-        // mouse mode before releasing the cursor to the overlay.
+
         if (I::InputSystem) {
             __try
             {
@@ -524,7 +516,6 @@ void Menu::toggleMenu() {
             }
         }
 
-        // Free the cursor so it can interact with our menu, and make it visible.
         ClipCursor(nullptr);
         do {
             ++cursorShowAdjustments;
@@ -544,8 +535,6 @@ void Menu::toggleMenu() {
         }
         relativeMouseStateCaptured = false;
 
-        // Restore the cursor-display count that existed before our menu
-        // opened, leaving the game's own menus free to show their cursor.
         ClipCursor(nullptr);
         while (cursorShowAdjustments > 0) {
             ShowCursor(FALSE);

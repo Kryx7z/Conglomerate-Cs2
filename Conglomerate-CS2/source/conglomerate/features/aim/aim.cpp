@@ -7,8 +7,6 @@
 #include <chrono>
 #include <Windows.h>
 
-// Literally the most autistic code ive ever written in my life
-// Please dont ever make me do this again
 
 static bool is_writable_address(const void* address)
 {
@@ -35,9 +33,6 @@ Vector_t GetEntityEyePos(const C_CSPlayerPawn* Entity) {
     if (!Entity)
         return {};
 
-    // SchemaFinder::Get() returns 0 for an unresolved field. Adding that 0 to
-    // the entity pointer silently turned every failed lookup into a read at
-    // the object's vtable pointer.
     const std::uint32_t sceneNodeOffset = SchemaFinder::Get("C_BaseEntity->m_pGameSceneNode");
     const std::uint32_t originOffset = SchemaFinder::Get("CGameSceneNode->m_vecAbsOrigin");
     const std::uint32_t viewOffsetOffset = SchemaFinder::Get("C_BaseModelEntity->m_vecViewOffset");
@@ -153,7 +148,7 @@ void Aimbot() {
         const float fov = GetFov(*viewangles, angle);
         if (!std::isfinite(fov) || fov > best_fov)
             continue;
-        // Closest to the crosshair wins - don't just take the first match.
+
         best_fov = fov;
         best_pawn = pawn;
         best_angle = angle;
