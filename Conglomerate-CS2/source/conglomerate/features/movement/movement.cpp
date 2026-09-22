@@ -13,6 +13,7 @@ namespace
 	using SetViewAnglesFn = void(__fastcall*)(void*, int, QAngle_t*);
 	QAngle_t* g_capturedViewAngles = nullptr;
 	void* g_capturedInput = nullptr;
+	int g_capturedSlot = 0;
 	QAngle_t g_savedViewAngles{};
 
 	GetViewAnglesFn resolveGetViewAngles()
@@ -31,6 +32,11 @@ namespace
 
 	bool captureViewAnglesSafe(void* input, int slot)
 	{
+		// A failed capture must not leave state from a previous call behind.
+		g_capturedViewAngles = nullptr;
+		g_capturedInput = nullptr;
+		g_capturedSlot = 0;
+
 		void* activeInput = I::Input ? I::Input : input;
 		if (!activeInput)
 			return false;
@@ -38,17 +44,20 @@ namespace
 		__try
 		{
 			const auto fn = resolveGetViewAngles();
-			g_capturedViewAngles = fn ? fn(activeInput, 0) : nullptr;
+			g_capturedViewAngles = fn ? fn(activeInput, slot) : nullptr;
 			if (!g_capturedViewAngles)
 				return false;
 
 			g_savedViewAngles = *g_capturedViewAngles;
 			g_capturedInput = activeInput;
+			g_capturedSlot = slot;
 			return true;
 		}
         __except (SehDiagnostics::handle("movement.capture_view_angles"))
 		{
 			g_capturedViewAngles = nullptr;
+			g_capturedInput = nullptr;
+			g_capturedSlot = 0;
 			return false;
 		}
 	}
@@ -59,7 +68,7 @@ namespace
 		{
 			const auto setter = resolveSetViewAngles();
 			if (setter && g_capturedInput)
-				setter(g_capturedInput, 0, &g_savedViewAngles);
+				setter(g_capturedInput, g_capturedSlot, &g_savedViewAngles);
 
 			if (g_capturedViewAngles)
 				*g_capturedViewAngles = g_savedViewAngles;
@@ -69,6 +78,7 @@ namespace
 		}
 		g_capturedViewAngles = nullptr;
 		g_capturedInput = nullptr;
+		g_capturedSlot = 0;
 	}
 }
 

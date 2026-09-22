@@ -26,10 +26,6 @@ bool CKeyValues3::LoadFromBuffer(const char* szString)
         0xB5F447C23C0CDF8C
     );
 
-    // This is the loader used by RavenCash's working ChamsV4 path.  It takes
-    // the VMAT text directly and fills the full material-resource KV3 object;
-    // the CUtlBuffer overload produces an object that CreateMaterial rejects
-    // on the current build.
     if (I::LoadKV3TextExport)
     {
         __try
@@ -340,9 +336,6 @@ CKeyValues3* CKeyValues3::create_material_from_resource()
         return nullptr;
     }
 
-    // CKeyValues3's material-resource storage is larger than the small
-    // wrapper used by this project.  RavenCash allocates 0x200 bytes; match
-    // that ABI so the game's loader cannot write past the object.
     void* storage = ::operator new(0x200, std::nothrow);
     if (!storage)
         return nullptr;
