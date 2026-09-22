@@ -160,7 +160,6 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="external\imgui\imgui.cpp" />
-    <ClCompile Include="external\imgui\imgui_demo.cpp" />
     <ClCompile Include="external\imgui\imgui_draw.cpp" />
     <ClCompile Include="external\imgui\imgui_impl_dx11.cpp" />
     <ClCompile Include="external\imgui\imgui_impl_win32.cpp" />
@@ -260,6 +259,8 @@
     <ClInclude Include="source\conglomerate\utils\memory\Interface\Interface.h" />
     <ClInclude Include="source\conglomerate\utils\memory\memorycommon.h" />
     <ClInclude Include="source\conglomerate\utils\memory\patternscan\patternscan.h" />
+    <ClInclude Include="source\conglomerate\utils\memory\safe_memory.h" />
+    <ClInclude Include="source\conglomerate\utils\memory\seh_diagnostics.h" />
     <ClInclude Include="source\conglomerate\utils\memory\vfunc\vfunc.h" />
     <ClInclude Include="source\conglomerate\utils\module\module.h" />
     <ClInclude Include="source\conglomerate\players\players.h" />

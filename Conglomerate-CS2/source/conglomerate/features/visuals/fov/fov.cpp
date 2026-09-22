@@ -2,6 +2,7 @@
 #include "../../../hooks/hooks.h"
 #include "../../../config/config.h"
 #include "../../../interfaces/interfaces.h"
+#include "../../../utils/memory/safe_memory.h"
 
 static float hkGetRenderFov_impl(void* rcx)
 {
@@ -37,7 +38,7 @@ float H::hkGetRenderFov(void* rcx) {
 	{
 		return hkGetRenderFov_impl(rcx);
 	}
-	__except (EXCEPTION_EXECUTE_HANDLER)
+	__except (SehDiagnostics::handle("fov.render"))
 	{
 		// A weapon/schema read must never turn the custom FOV off. If the
 		// scoped-state path is unavailable for a frame, keep the requested FOV.
@@ -56,7 +57,7 @@ static bool ReadLocalScopedState()
 		}
 		return false;
 	}
-	__except (EXCEPTION_EXECUTE_HANDLER)
+	__except (SehDiagnostics::handle("fov.scoped_state"))
 	{
 		return false;
 	}
@@ -67,15 +68,7 @@ static bool WriteViewFov(void* viewSetup, float value)
 	if (!viewSetup)
 		return false;
 
-	__try
-	{
-		*reinterpret_cast<float*>(reinterpret_cast<std::uintptr_t>(viewSetup) + 0x498u) = value;
-		return true;
-	}
-	__except (EXCEPTION_EXECUTE_HANDLER)
-	{
-		return false;
-	}
+	return SafeMemory::write(reinterpret_cast<std::uintptr_t>(viewSetup) + 0x498u, value);
 }
 
 static void ApplyOverrideViewFov(void* viewSetup)

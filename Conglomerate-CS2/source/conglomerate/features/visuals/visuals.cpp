@@ -11,6 +11,7 @@
 #include "../../players/players.h"
 #include "../../utils/memory/patternscan/patternscan.h"
 #include "../../utils/memory/gaa/gaa.h"
+#include "../../utils/memory/safe_memory.h"
 #include "../../../../external/imgui/imgui.h"
 #include "../../interfaces/interfaces.h"
 #include "../../config/config.h"
@@ -41,23 +42,27 @@ namespace
         if (!pawn)
             return false;
 
+        std::uintptr_t scene = 0;
         __try
         {
-            const auto scene = reinterpret_cast<std::uintptr_t>(pawn->m_pGameSceneNode());
-            if (!IsValidAddress(scene))
-                return false;
-
-            const auto boneArray = *reinterpret_cast<std::uintptr_t*>(scene + 0x140 + 0x80);
-            if (!IsValidAddress(boneArray))
-                return false;
-
-            position = *reinterpret_cast<Vector_t*>(boneArray + static_cast<int>(bone) * 0x20);
-            return std::isfinite(position.x) && std::isfinite(position.y) && std::isfinite(position.z);
+            scene = reinterpret_cast<std::uintptr_t>(pawn->m_pGameSceneNode());
         }
-        __except (EXCEPTION_EXECUTE_HANDLER)
+        __except (SehDiagnostics::handle("visuals.scene_node"))
         {
             return false;
         }
+
+        if (!IsValidAddress(scene))
+            return false;
+
+        std::uintptr_t boneArray = 0;
+        if (!SafeMemory::read(scene + 0x1C0u, boneArray) || !IsValidAddress(boneArray))
+            return false;
+
+        if (!SafeMemory::read(boneArray + static_cast<int>(bone) * 0x20u, position))
+            return false;
+
+        return std::isfinite(position.x) && std::isfinite(position.y) && std::isfinite(position.z);
     }
 
     const char* GetWeaponDataName(C_CSWeaponBase* weapon)
@@ -91,7 +96,7 @@ namespace
 
             result = GetWeaponDataName(weapon);
         }
-        __except (EXCEPTION_EXECUTE_HANDLER)
+        __except (SehDiagnostics::handle("visuals.active_weapon"))
         {
             return "unknown";
         }
@@ -126,7 +131,7 @@ namespace
                     return true;
             }
         }
-        __except (EXCEPTION_EXECUTE_HANDLER)
+        __except (SehDiagnostics::handle("visuals.inventory"))
         {
             return false;
         }

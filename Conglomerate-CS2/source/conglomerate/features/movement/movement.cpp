@@ -5,6 +5,7 @@
 
 #include "../../interfaces/interfaces.h"
 #include "../../utils/memory/patternscan/patternscan.h"
+#include "../../utils/memory/safe_memory.h"
 
 namespace
 {
@@ -45,7 +46,7 @@ namespace
 			g_capturedInput = activeInput;
 			return true;
 		}
-		__except (EXCEPTION_EXECUTE_HANDLER)
+        __except (SehDiagnostics::handle("movement.capture_view_angles"))
 		{
 			g_capturedViewAngles = nullptr;
 			return false;
@@ -63,7 +64,7 @@ namespace
 			if (g_capturedViewAngles)
 				*g_capturedViewAngles = g_savedViewAngles;
 		}
-		__except (EXCEPTION_EXECUTE_HANDLER)
+		__except (SehDiagnostics::handle("movement.restore_view_angles"))
 		{
 		}
 		g_capturedViewAngles = nullptr;
@@ -80,35 +81,43 @@ void Movement::suppressInput(void* input)
         (1ULL << 2) | (1ULL << 5) | (1ULL << 11) | (1ULL << 13);
 
     const auto base = reinterpret_cast<std::uintptr_t>(input);
-    __try
+    const auto clearButtons = [&](std::uintptr_t address)
     {
-        if (I::InputUsesLegacyLayout)
-        {
-            *reinterpret_cast<std::uint64_t*>(base + 0x7A0) &= ~blockedButtons;
-            *reinterpret_cast<std::uint64_t*>(base + 0x7A8) = 0;
-            *reinterpret_cast<std::uint64_t*>(base + 0x7B0) = 0;
-            *reinterpret_cast<std::uint64_t*>(base + 0x7B8) = 0;
-            *reinterpret_cast<float*>(base + 0x7C0) = 0.0f;
-            *reinterpret_cast<float*>(base + 0x7C4) = 0.0f;
-            *reinterpret_cast<float*>(base + 0x7C8) = 0.0f;
-            *reinterpret_cast<std::int32_t*>(base + 0x7CC) = 0;
-            *reinterpret_cast<std::int32_t*>(base + 0x7D0) = 0;
-        }
-        else
-        {
-            *reinterpret_cast<std::uint64_t*>(base + 0x250) &= ~blockedButtons;
-            *reinterpret_cast<std::uint64_t*>(base + 0x258) = 0;
-            *reinterpret_cast<std::uint64_t*>(base + 0x260) = 0;
-            *reinterpret_cast<std::uint64_t*>(base + 0x268) = 0;
-            *reinterpret_cast<float*>(base + 0x270) = 0.0f;
-            *reinterpret_cast<float*>(base + 0x274) = 0.0f;
-            *reinterpret_cast<float*>(base + 0x278) = 0.0f;
-            *reinterpret_cast<std::int32_t*>(base + 0x27C) = 0;
-            *reinterpret_cast<std::int32_t*>(base + 0x280) = 0;
-        }
+        std::uint64_t buttons = 0;
+        if (!SafeMemory::read(address, buttons))
+            return;
+
+        SafeMemory::write(address, buttons & ~blockedButtons);
+    };
+
+    const auto clearValue = [&](std::uintptr_t address, auto value)
+    {
+        SafeMemory::write(address, value);
+    };
+
+    if (I::InputUsesLegacyLayout)
+    {
+        clearButtons(base + 0x7A0);
+        clearValue(base + 0x7A8, std::uint64_t{});
+        clearValue(base + 0x7B0, std::uint64_t{});
+        clearValue(base + 0x7B8, std::uint64_t{});
+        clearValue(base + 0x7C0, 0.0f);
+        clearValue(base + 0x7C4, 0.0f);
+        clearValue(base + 0x7C8, 0.0f);
+        clearValue(base + 0x7CC, std::int32_t{});
+        clearValue(base + 0x7D0, std::int32_t{});
     }
-    __except (EXCEPTION_EXECUTE_HANDLER)
+    else
     {
+        clearButtons(base + 0x250);
+        clearValue(base + 0x258, std::uint64_t{});
+        clearValue(base + 0x260, std::uint64_t{});
+        clearValue(base + 0x268, std::uint64_t{});
+        clearValue(base + 0x270, 0.0f);
+        clearValue(base + 0x274, 0.0f);
+        clearValue(base + 0x278, 0.0f);
+        clearValue(base + 0x27C, std::int32_t{});
+        clearValue(base + 0x280, std::int32_t{});
     }
 }
 
@@ -117,13 +126,7 @@ void Movement::setInputBlocked(void* input, bool blocked)
     if (!input || I::InputUsesLegacyLayout)
         return;
 
-    __try
-    {
-        *reinterpret_cast<bool*>(reinterpret_cast<std::uintptr_t>(input) + 0x228) = blocked;
-    }
-    __except (EXCEPTION_EXECUTE_HANDLER)
-    {
-    }
+    SafeMemory::write(reinterpret_cast<std::uintptr_t>(input) + 0x228u, blocked);
 }
 
 bool Movement::captureViewAngles(void* input, int slot)

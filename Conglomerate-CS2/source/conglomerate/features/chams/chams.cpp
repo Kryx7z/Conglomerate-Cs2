@@ -4,6 +4,7 @@
 #include "../../config/config.h"
 #include "../../../../external/imgui/imgui.h"
 #include "../../utils/math/utlstronghandle/utlstronghandle.h"
+#include "../../utils/memory/seh_diagnostics.h"
 #include "../../../cs2/entity/C_Material/C_Material.h"
 #include "../../interfaces/interfaces.h"
 #include "../../interfaces/CGameEntitySystem/CGameEntitySystem.h"
@@ -20,7 +21,7 @@ static bool SafeCallCreateMaterial(CStrongHandle<CMaterial2>* pOut, const char* 
         I::CreateMaterial(I::MaterialSystem2, pOut, name, pKeyValues3, nullptr, 1U);
         return pOut && *pOut != nullptr;
     }
-    __except (EXCEPTION_EXECUTE_HANDLER)
+    __except (SehDiagnostics::handle("chams.create_material"))
     {
         return false;
     }
@@ -348,7 +349,7 @@ void __fastcall chams::hook(void* a1, void* a2, CMeshData* pMeshScene, int nMesh
     {
         chams_hook_impl(a1, a2, pMeshScene, nMeshCount, pSceneView, pSceneLayer, pUnk, pUnk2);
     }
-    __except (EXCEPTION_EXECUTE_HANDLER)
+    __except (SehDiagnostics::handle("chams.hook"))
     {
         // NOTE: deliberately NOT calling original() here. if this still crashes,
         // calling original() would too (that's what crashed originally, even on

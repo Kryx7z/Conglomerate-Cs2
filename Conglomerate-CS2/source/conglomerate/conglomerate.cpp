@@ -11,13 +11,7 @@ void Conglomerate::init(HWND& window, ID3D11Device* pDevice, ID3D11DeviceContext
     interfaces.init();
     renderer.visuals.init();
 
-    __try
-    {
-        materials.init();
-    }
-    __except (EXCEPTION_EXECUTE_HANDLER)
-    {
-    }
+    materials.init();
 
     hooks.init();
 }

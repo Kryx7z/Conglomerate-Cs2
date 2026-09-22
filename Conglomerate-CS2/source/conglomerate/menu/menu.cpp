@@ -2,6 +2,7 @@
 #include "../config/config.h"
 #include "../interfaces/interfaces.h"
 #include "../utils/memory/vfunc/vfunc.h"
+#include "../utils/memory/safe_memory.h"
 
 #include <cstdint>
 #include <cstdio>
@@ -503,16 +504,20 @@ void Menu::toggleMenu() {
     if (showMenu) {
 
         if (I::InputSystem) {
-            __try
+            std::uint8_t relativeMouse = 0;
+            const auto inputSystemAddress = reinterpret_cast<std::uintptr_t>(I::InputSystem);
+            if (SafeMemory::read(inputSystemAddress + 84u, relativeMouse))
             {
-                savedRelativeMouse = *reinterpret_cast<std::uint8_t*>(
-                    reinterpret_cast<std::uintptr_t>(I::InputSystem) + 84u) != 0;
+                savedRelativeMouse = relativeMouse != 0;
                 relativeMouseStateCaptured = true;
-                M::vfunc<void, 76U>(I::InputSystem, false);
-            }
-            __except (EXCEPTION_EXECUTE_HANDLER)
-            {
-                relativeMouseStateCaptured = false;
+                __try
+                {
+                    M::vfunc<void, 76U>(I::InputSystem, false);
+                }
+                __except (SehDiagnostics::handle("menu.input.capture"))
+                {
+                    relativeMouseStateCaptured = false;
+                }
             }
         }
 
@@ -529,7 +534,7 @@ void Menu::toggleMenu() {
             {
                 M::vfunc<void, 76U>(I::InputSystem, savedRelativeMouse);
             }
-            __except (EXCEPTION_EXECUTE_HANDLER)
+            __except (SehDiagnostics::handle("menu.input.restore"))
             {
             }
         }

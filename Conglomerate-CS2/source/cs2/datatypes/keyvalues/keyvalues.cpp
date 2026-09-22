@@ -9,6 +9,7 @@
 #include "../../../conglomerate/utils/memory/vfunc/vfunc.h"
 #include "../../../conglomerate/utils/memory/patternscan/patternscan.h"
 #include "../../../conglomerate/utils/memory/memorycommon.h"
+#include "../../../conglomerate/utils/memory/seh_diagnostics.h"
 #include "../cutl/utlhash/utlhash.h"
 #include "../../../conglomerate/utils/math/utlvector/utlvector.h"
 #include "../../../conglomerate/interfaces/interfaces.h"
@@ -43,7 +44,7 @@ bool CKeyValues3::LoadFromBuffer(const char* szString)
             );
             return loaded;
         }
-        __except (EXCEPTION_EXECUTE_HANDLER)
+        __except (SehDiagnostics::handle("keyvalues.load_text"))
         {
             return false;
         }
@@ -108,7 +109,7 @@ static bool SafeCallLoadKV3(
             ""
         );
     }
-    __except (EXCEPTION_EXECUTE_HANDLER)
+    __except (SehDiagnostics::handle("keyvalues.load_internal"))
     {
         return false;
     }
@@ -124,7 +125,7 @@ static bool SafeCallLoadKV3Export(
     {
         return I::LoadKV3Export(keyValues, nullptr, buffer, kv3ID, "", 0);
     }
-    __except (EXCEPTION_EXECUTE_HANDLER)
+    __except (SehDiagnostics::handle("keyvalues.load_export"))
     {
         return false;
     }
@@ -193,7 +194,7 @@ static CKeyValues3* SafeCallSetTypeKV3(
     {
         return fn(pKeyValue, 1U, 6U);
     }
-    __except (EXCEPTION_EXECUTE_HANDLER)
+    __except (SehDiagnostics::handle("keyvalues.set_type"))
     {
         CKeyValues3::destroy_material_resource(pKeyValue);
         return nullptr;

@@ -8,6 +8,7 @@
 #include "../../interfaces/interfaces.h"
 #include "../../utils/memory/patternscan/patternscan.h"
 #include "../../utils/memory/gaa/gaa.h"
+#include "../../utils/memory/safe_memory.h"
 #include "../../../cs2/entity/C_BaseEntity/C_BaseEntity.h"
 
 namespace
@@ -56,47 +57,13 @@ namespace
     template <typename T>
     static bool readMemory(std::uintptr_t address, T& value) noexcept
     {
-        if (!address)
-            return false;
-
-#if defined(CONGLOMERATE_DEBUG_SAFE_MEMORY)
-        SIZE_T bytesRead = 0;
-        return ReadProcessMemory(GetCurrentProcess(), reinterpret_cast<const void*>(address),
-            &value, sizeof(T), &bytesRead) != FALSE && bytesRead == sizeof(T);
-#else
-        __try
-        {
-            value = *reinterpret_cast<const T*>(address);
-            return true;
-        }
-        __except (EXCEPTION_EXECUTE_HANDLER)
-        {
-            return false;
-        }
-#endif
+        return SafeMemory::read(address, value);
     }
 
     template <typename T>
     static bool writeMemory(std::uintptr_t address, const T& value) noexcept
     {
-        if (!address)
-            return false;
-
-#if defined(CONGLOMERATE_DEBUG_SAFE_MEMORY)
-        SIZE_T bytesWritten = 0;
-        return WriteProcessMemory(GetCurrentProcess(), reinterpret_cast<void*>(address),
-            &value, sizeof(T), &bytesWritten) != FALSE && bytesWritten == sizeof(T);
-#else
-        __try
-        {
-            *reinterpret_cast<T*>(address) = value;
-            return true;
-        }
-        __except (EXCEPTION_EXECUTE_HANDLER)
-        {
-            return false;
-        }
-#endif
+        return SafeMemory::write(address, value);
     }
 
     static std::uintptr_t resolveLightDataQueueGlobal()
@@ -157,7 +124,7 @@ namespace
 		{
 			name = reinterpret_cast<CMaterial2*>(material)->GetName();
 		}
-		__except (EXCEPTION_EXECUTE_HANDLER)
+		__except (SehDiagnostics::handle("world.material_name"))
 		{
 			return false;
 		}
@@ -171,7 +138,7 @@ namespace
 			isOverlay = std::strstr(name, "cloud") != nullptr ||
 				std::strstr(name, "sun") != nullptr;
 		}
-		__except (EXCEPTION_EXECUTE_HANDLER)
+		__except (SehDiagnostics::handle("world.material_string"))
 		{
 			return false;
 		}
@@ -230,22 +197,30 @@ static bool writeSkyState(std::uintptr_t address, std::uint32_t tintOffset,
         writeMemory(address + brightnessOffset, brightness);
 }
 
-static bool isSkyEntity(C_BaseEntity* entity)
+static bool getClassInfoSafe(C_BaseEntity* entity, SchemaClassInfoData_t*& classInfo)
 {
+    if (!entity)
+        return false;
+
     __try
     {
-        if (!entity)
-            return false;
-
-        SchemaClassInfoData_t* classInfo = nullptr;
         entity->dump_class_info(&classInfo);
-        return classInfo && classInfo->szName &&
-            hash_32_fnv1a_const(classInfo->szName) == hash_32_fnv1a_const("C_EnvSky");
+        return true;
     }
-    __except (EXCEPTION_EXECUTE_HANDLER)
+    __except (SehDiagnostics::handle("world.class_info"))
     {
         return false;
     }
+}
+
+static bool isSkyEntity(C_BaseEntity* entity)
+{
+    SchemaClassInfoData_t* classInfo = nullptr;
+    if (!getClassInfoSafe(entity, classInfo))
+        return false;
+
+    return classInfo && classInfo->szName &&
+        hash_32_fnv1a_const(classInfo->szName) == hash_32_fnv1a_const("C_EnvSky");
 }
 
 static bool prepareSkyboxColor(void* meshArray, int meshCount)
@@ -444,37 +419,27 @@ void H::updateSmoke()
     if (!smokeTickOffset && !didSmokeOffset)
         return;
 
-    __try
+    const int highest = I::GameEntity->Instance->GetHighestEntityIndex();
+    for (int i = 1; i <= highest; ++i)
     {
-        const int highest = I::GameEntity->Instance->GetHighestEntityIndex();
-        for (int i = 1; i <= highest; ++i)
+        auto* entity = I::GameEntity->Instance->Get(i);
+        SchemaClassInfoData_t* classInfo = nullptr;
+        if (!getClassInfoSafe(entity, classInfo) || !classInfo || !classInfo->szName)
+            continue;
+
+        const auto hash = hash_32_fnv1a_const(classInfo->szName);
+        if (hash != hash_32_fnv1a_const("C_SmokeGrenadeProjectile") &&
+            hash != hash_32_fnv1a_const("CSmokeGrenadeProjectile"))
+            continue;
+
+        const auto address = reinterpret_cast<std::uintptr_t>(entity);
+        if (smokeTickOffset)
+            writeMemory(address + smokeTickOffset, -1);
+        if (didSmokeOffset)
         {
-            auto* entity = I::GameEntity->Instance->Get(i);
-            if (!entity)
-                continue;
-
-            SchemaClassInfoData_t* classInfo = nullptr;
-            entity->dump_class_info(&classInfo);
-            if (!classInfo || !classInfo->szName)
-                continue;
-
-            const auto hash = hash_32_fnv1a_const(classInfo->szName);
-            if (hash != hash_32_fnv1a_const("C_SmokeGrenadeProjectile") &&
-                hash != hash_32_fnv1a_const("CSmokeGrenadeProjectile"))
-                continue;
-
-            const auto address = reinterpret_cast<std::uintptr_t>(entity);
-            if (smokeTickOffset)
-                writeMemory(address + smokeTickOffset, -1);
-            if (didSmokeOffset)
-            {
-                const bool didSmoke = true;
-                writeMemory(address + didSmokeOffset, didSmoke);
-            }
+            const bool didSmoke = true;
+            writeMemory(address + didSmokeOffset, didSmoke);
         }
-    }
-    __except (EXCEPTION_EXECUTE_HANDLER)
-    {
     }
 }
 

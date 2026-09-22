@@ -1,6 +1,7 @@
 #include "includes.h"
 #include "conglomerate/conglomerate.h"
 #include "conglomerate/renderer/icons.h"
+#include "conglomerate/utils/memory/seh_diagnostics.h"
 
 #include "../external/kiero/minhook/include/MinHook.h"
 
@@ -91,7 +92,7 @@ HRESULT __stdcall hkPresent(IDXGISwapChain* pSwapChain, UINT SyncInterval, UINT 
             {
                 conglomerate.init(window, pDevice, pContext, mainRenderTargetView);
             }
-            __except (EXCEPTION_EXECUTE_HANDLER)
+            __except (SehDiagnostics::handle("present.init"))
             {
             }
 
@@ -109,7 +110,7 @@ HRESULT __stdcall hkPresent(IDXGISwapChain* pSwapChain, UINT SyncInterval, UINT 
     {
         conglomerate.renderer.menu.render();
     }
-    __except (EXCEPTION_EXECUTE_HANDLER)
+    __except (SehDiagnostics::handle("present.menu"))
     {
     }
 
@@ -118,7 +119,7 @@ HRESULT __stdcall hkPresent(IDXGISwapChain* pSwapChain, UINT SyncInterval, UINT 
     conglomerate.renderer.hud.render();
     conglomerate.renderer.spectatorList.render();
     }
-    __except (EXCEPTION_EXECUTE_HANDLER)
+    __except (SehDiagnostics::handle("present.hud_spectators"))
     {
     }
 
@@ -127,7 +128,7 @@ HRESULT __stdcall hkPresent(IDXGISwapChain* pSwapChain, UINT SyncInterval, UINT 
     {
         conglomerate.renderer.visuals.esp();
     }
-    __except (EXCEPTION_EXECUTE_HANDLER)
+    __except (SehDiagnostics::handle("present.esp"))
     {
     }
 

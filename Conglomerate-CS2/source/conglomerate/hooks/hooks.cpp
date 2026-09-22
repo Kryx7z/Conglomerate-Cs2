@@ -17,6 +17,7 @@
 #include "../features/aim/aim.h"
 #include "../features/movement/movement.h"
 #include "../menu/menu.h"
+#include "../utils/memory/seh_diagnostics.h"
 
 #include <cstdio>
 
@@ -46,26 +47,14 @@ static bool ReadMemorySafe(std::uintptr_t address, void* output, std::size_t siz
 
 static void SuppressInputSafe(void* input)
 {
-	__try
-	{
-		Movement::suppressInput(input);
-	}
-	__except (EXCEPTION_EXECUTE_HANDLER)
-	{
-	}
+	Movement::suppressInput(input);
 }
 
 static void PrepareInputSafe(void* input, bool menuOpen)
 {
-	__try
-	{
-		Movement::setInputBlocked(input, menuOpen);
-		if (menuOpen)
-			Movement::suppressInput(input);
-	}
-	__except (EXCEPTION_EXECUTE_HANDLER)
-	{
-	}
+	Movement::setInputBlocked(input, menuOpen);
+	if (menuOpen)
+		Movement::suppressInput(input);
 }
 
 using CreateMoveFn = void(__fastcall*)(void*, unsigned int, std::int64_t);
@@ -120,7 +109,7 @@ static bool CallCreateMoveSafe(CreateMoveFn original, void* input, unsigned int 
 		original(input, slot, active);
 		return true;
 	}
-	__except (EXCEPTION_EXECUTE_HANDLER)
+	__except (SehDiagnostics::handle("hook.create_move.original"))
 	{
 		return false;
 	}
@@ -140,12 +129,12 @@ static void hkFrameStageNotify_impl(void* a1, int stage)
 		{
 			H::updateSmoke();
 		}
-		__except (EXCEPTION_EXECUTE_HANDLER)
+		__except (SehDiagnostics::handle("hook.frame_stage.smoke"))
 		{
 		}
 	}
 
-	// frame_render_stage - fires at render-rate on this build (confirmed empirically).
+	// frame_render_stage: fires at render-rate on this build (confirmed empirically).
 	if (stage != 12)
 		return;
 
@@ -153,7 +142,7 @@ static void hkFrameStageNotify_impl(void* a1, int stage)
 	{
 		H::updateSky();
 	}
-	__except (EXCEPTION_EXECUTE_HANDLER)
+	__except (SehDiagnostics::handle("hook.frame_stage.sky"))
 	{
 	}
 
@@ -165,7 +154,7 @@ static void hkFrameStageNotify_impl(void* a1, int stage)
 	{
 		Esp::cache();
 	}
-	__except (EXCEPTION_EXECUTE_HANDLER)
+	__except (SehDiagnostics::handle("hook.frame_stage.esp"))
 	{
 	}
 
@@ -175,7 +164,7 @@ static void hkFrameStageNotify_impl(void* a1, int stage)
 		{
 			Aimbot();
 		}
-		__except (EXCEPTION_EXECUTE_HANDLER)
+		__except (SehDiagnostics::handle("hook.frame_stage.aimbot"))
 		{
 		}
 	}
@@ -187,7 +176,7 @@ void __fastcall H::hkFrameStageNotify(void* a1, int stage)
 	{
 		hkFrameStageNotify_impl(a1, stage);
 	}
-	__except (EXCEPTION_EXECUTE_HANDLER)
+	__except (SehDiagnostics::handle("hook.frame_stage"))
 	{
 	}
 }
