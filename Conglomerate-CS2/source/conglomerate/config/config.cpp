@@ -14,6 +14,7 @@ namespace Config {
 	float skeletonThickness = 1.0f;
 
 	bool Night = false;
+	ImVec4 NightColor = ImVec4(0.1f, 0.1f, 0.1f, 1.0f);
 
 	bool enemyChamsInvisible = false;
 	bool enemyChams = false;
@@ -48,7 +49,6 @@ namespace Config {
 	bool antiflash = false;
 	bool noSmoke = false;
 
-	ImVec4 NightColor = ImVec4(0.1f, 0.1f, 0.1f, 1.0f);
 
 	bool aimbot = 0;
 	float aimbot_fov = 0;

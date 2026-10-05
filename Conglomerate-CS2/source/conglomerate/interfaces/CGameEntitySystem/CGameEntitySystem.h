@@ -32,7 +32,7 @@ public:
 
 	int GetHighestEntityIndex()
 	{
-		return *reinterpret_cast<int*>(reinterpret_cast<std::uintptr_t>(this) + 0x2090);
+		return *reinterpret_cast<int*>(reinterpret_cast<std::uintptr_t>(this) + 0x2120);
 	}
 
 

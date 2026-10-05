@@ -288,11 +288,11 @@ namespace internal_config
             Config::Night = j.value("Night", false);
             if (j.contains("NightColor") && j["NightColor"].is_array() && j["NightColor"].size() == 4)
             {
-                auto arr = j["NightColor"];
-                Config::NightColor.x = arr[0].get<float>();
-                Config::NightColor.y = arr[1].get<float>();
-                Config::NightColor.z = arr[2].get<float>();
-                Config::NightColor.w = arr[3].get<float>();
+                const auto arr = j["NightColor"];
+                Config::NightColor.x = std::clamp(arr[0].get<float>(), 0.0f, 1.0f);
+                Config::NightColor.y = std::clamp(arr[1].get<float>(), 0.0f, 1.0f);
+                Config::NightColor.z = std::clamp(arr[2].get<float>(), 0.0f, 1.0f);
+                Config::NightColor.w = std::clamp(arr[3].get<float>(), 0.0f, 1.0f);
             }
 
             Config::enemyChamsInvisible = j.value("enemyChamsInvisible", false);

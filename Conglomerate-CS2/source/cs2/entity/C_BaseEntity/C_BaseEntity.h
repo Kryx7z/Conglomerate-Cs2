@@ -12,21 +12,11 @@ class C_BaseEntity : public CEntityInstance
 public:
 	schema(int, m_iMaxHealth, "C_BaseEntity->m_iMaxHealth");
 	SCHEMA_ADD_OFFSET(int, m_iHealth, 0x34C);
-	SCHEMA_ADD_OFFSET(int, m_iTeamNum, 0x3E7);
-
-	bool IsBasePlayer()
-	{
-		SchemaClassInfoData_t* pClassInfo;
-		dump_class_info(&pClassInfo);
-		if (pClassInfo == nullptr)
-			return false;
-
-		return hash_32_fnv1a_const(pClassInfo->szName) == hash_32_fnv1a_const("C_CSPlayerPawn");
-	}
+	SCHEMA_ADD_OFFSET(std::uint8_t, m_iTeamNum, 0x3E7);
 
 	bool IsViewmodelAttachment()
 	{
-		SchemaClassInfoData_t* pClassInfo;
+		SchemaClassInfoData_t* pClassInfo = nullptr;
 		dump_class_info(&pClassInfo);
 		if (pClassInfo == nullptr)
 			return false;
@@ -38,7 +28,7 @@ public:
 
 	bool IsViewmodel()
 	{
-		SchemaClassInfoData_t* pClassInfo;
+		SchemaClassInfoData_t* pClassInfo = nullptr;
 		dump_class_info(&pClassInfo);
 		if (pClassInfo == nullptr)
 			return false;
@@ -50,13 +40,10 @@ public:
 
 	bool IsPlayerController()
 	{
-		SchemaClassInfoData_t* _class = nullptr;
-		dump_class_info(&_class);
-		if (!_class)
+		const char* name = designerName();
+		if (!name)
 			return false;
 
-		const uint32_t hash = hash_32_fnv1a_const(_class->szName);
-
-		return (hash == hash_32_fnv1a_const("CCSPlayerController"));
+		return hash_32_fnv1a_const(name) == hash_32_fnv1a_const("cs_player_controller");
 	}
 };

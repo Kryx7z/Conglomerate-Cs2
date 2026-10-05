@@ -1,5 +1,6 @@
 #include "interfaces.h"
 #include "CGameEntitySystem/CGameEntitySystem.h"
+#include "../utils/debug_console.h"
 
 // @used: I::Get<template>
 #include "..\..\conglomerate\utils\memory\Interface\Interface.h"
@@ -25,7 +26,7 @@ namespace
     constexpr const char* createMaterialPatterns[] =
     {
         // Current CS2 materialsystem2.dll builds.
-        "48 89 5C 24 08 48 89 6C 24 10 48 89 74 24 18 48 89 7C 24 20 41 56 48 81 EC 10 01 00 00 48 8B 05 ? ? ? ? 4C 8B F2",
+        "48 89 5C 24 ? 48 89 6C 24 ? 48 89 74 24 ? 48 89 7C 24 ? 41 56 48 81 EC ? ? ? ? 48 8B 05 ? ? ? ? 48 8B F2",
         // Older builds.
         "48 89 5C 24 ? 48 89 6C 24 ? 56 57 41 56 48 81 EC ? ? ? ? 48 8B 05",
     };
@@ -57,7 +58,10 @@ bool I::Interfaces::init()
 {
     const HMODULE tier0_base = GetModuleHandleA("tier0.dll");
     if (!tier0_base)
+	{
+		DebugConsole::logf("[interfaces] tier0.dll is not loaded");
         return false;
+	}
 
 	bool success = true;
 	constexpr bool enableInputFeatures = true;
@@ -71,11 +75,12 @@ bool I::Interfaces::init()
 
 	InputSystem = I::Get<void>("inputsystem.dll", "InputSystemVersion001");
 
+	uintptr_t inputPattern = 0;
 	if (enableInputFeatures)
 	{
-		uintptr_t inputPattern = M::patternScan(
+		inputPattern = M::patternScan(
 			"client",
-			"4C 8B 05 ? ? ? ? 41 8B 80 50 0B 00 00 85 C0"
+			"48 8B 0D ? ? ? ? 4C 8D 47 14"
 		);
 		if (!inputPattern)
 		{
@@ -118,6 +123,15 @@ bool I::Interfaces::init()
     LoadKV3TextExport = reinterpret_cast<decltype(LoadKV3TextExport)>(resolve_export("?LoadKV3@@YA_NPEAVKeyValues3@@PEAVCUtlString@@PEBDAEBUKV3ID_t@@2I@Z"));
     LoadKV3Export = reinterpret_cast<decltype(LoadKV3Export)>(resolve_export("?LoadKV3@@YA_NPEAVKeyValues3@@PEAVCUtlString@@PEAVCUtlBuffer@@AEBUKV3ID_t@@PEBDI@Z"));
     LoadKeyValues = reinterpret_cast<decltype(LoadKeyValues)>(resolve_export("?LoadKV3@@YA_NPEAVKeyValues3@@PEAVCUtlString@@PEBDAEBUKV3ID_t@@2@Z"));
-    // return status
+	DebugConsole::logf("[interfaces] engine=%p entity_service=%p input=%p input_pattern=%p scene=%p material_system=%p create_material=%p exports(buffer=%p ensure=%p put=%p kv3_text=%p kv3_buffer=%p kv3=%p)",
+		static_cast<void*>(EngineClient), static_cast<void*>(GameEntity), Input,
+		reinterpret_cast<void*>(inputPattern), static_cast<void*>(SceneSystem), MaterialSystem2,
+		reinterpret_cast<void*>(CreateMaterial), reinterpret_cast<void*>(ConstructUtlBuffer),
+		reinterpret_cast<void*>(EnsureCapacityBuffer), reinterpret_cast<void*>(PutUtlString),
+		reinterpret_cast<void*>(LoadKV3TextExport), reinterpret_cast<void*>(LoadKV3Export),
+		reinterpret_cast<void*>(LoadKeyValues));
+	DebugConsole::logf("[interfaces] required interface status=%s", success ? "ready" : "one or more required interfaces missing");
+
+	// return status
     return success;
 }

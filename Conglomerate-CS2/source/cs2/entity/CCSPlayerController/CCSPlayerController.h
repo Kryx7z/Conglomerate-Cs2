@@ -12,11 +12,12 @@ public:
 	const char* getName() const;
 	uintptr_t getAddress() const;
 
-	SCHEMA_ADD_OFFSET(bool, IsLocalPlayer, 0x788);
+	SCHEMA_ADD_OFFSET(bool, IsLocalPlayer, 0x790);
 	SCHEMA_ADD_OFFSET(CBaseHandle, m_hPawn, 0x6BC);
+	SCHEMA_ADD_OFFSET(CBaseHandle, m_hPlayerPawn, 0x92C);
 	schema(CBaseHandle, m_hObserverPawn, "CCSPlayerController->m_hObserverPawn");
 	schema(bool, m_bPawnIsAlive, "CCSPlayerController->m_bPawnIsAlive");
-	SCHEMA_ADD_OFFSET(const char*, m_sSanitizedPlayerName, 0x868);
+	SCHEMA_ADD_OFFSET(const char*, m_sSanitizedPlayerName, 0x878);
 
 private:
 	uintptr_t address;

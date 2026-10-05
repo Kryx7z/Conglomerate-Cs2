@@ -2,6 +2,7 @@
 #include "conglomerate/conglomerate.h"
 #include "conglomerate/renderer/icons.h"
 #include "conglomerate/utils/memory/seh_diagnostics.h"
+#include "conglomerate/utils/debug_console.h"
 
 #include "../external/kiero/minhook/include/MinHook.h"
 
@@ -54,9 +55,28 @@ LRESULT __stdcall WndProc(const HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lPar
 }
 
 bool init = false;
+static LPTOP_LEVEL_EXCEPTION_FILTER g_previousUnhandledExceptionFilter = nullptr;
+
+static LONG WINAPI LogUnhandledException(EXCEPTION_POINTERS* exceptionInfo)
+{
+	if (exceptionInfo && exceptionInfo->ExceptionRecord)
+	{
+		DebugConsole::logf("[fatal] unhandled exception code=0x%08lX address=%p",
+			exceptionInfo->ExceptionRecord->ExceptionCode,
+		exceptionInfo->ExceptionRecord->ExceptionAddress);
+	}
+	else
+	{
+		DebugConsole::logf("[fatal] unhandled exception (no exception record)");
+	}
+	if (g_previousUnhandledExceptionFilter && g_previousUnhandledExceptionFilter != &LogUnhandledException)
+		return g_previousUnhandledExceptionFilter(exceptionInfo);
+	return EXCEPTION_CONTINUE_SEARCH;
+}
 
 HRESULT __stdcall hkPresent(IDXGISwapChain* pSwapChain, UINT SyncInterval, UINT Flags)
 {
+	DebugConsole::once("present.first", "[render] first Present callback reached");
     if (!init)
     {
         if (SUCCEEDED(pSwapChain->GetDevice(__uuidof(ID3D11Device), (void**)&pDevice)))
@@ -90,7 +110,9 @@ HRESULT __stdcall hkPresent(IDXGISwapChain* pSwapChain, UINT SyncInterval, UINT 
             // down with it.
             __try
             {
+				DebugConsole::logf("[startup] initializing Conglomerate");
                 conglomerate.init(window, pDevice, pContext, mainRenderTargetView);
+				DebugConsole::logf("[startup] Conglomerate initialization returned");
             }
             __except (SehDiagnostics::handle("present.init"))
             {
@@ -140,6 +162,9 @@ HRESULT __stdcall hkPresent(IDXGISwapChain* pSwapChain, UINT SyncInterval, UINT 
 
 DWORD WINAPI MainThread(LPVOID lpReserved)
 {
+    DebugConsole::initialize();
+    g_previousUnhandledExceptionFilter = SetUnhandledExceptionFilter(&LogUnhandledException);
+    DebugConsole::logf("[startup] worker thread started; module=%p", lpReserved);
     bool init_hook = false;
     do
     {
@@ -147,17 +172,24 @@ DWORD WINAPI MainThread(LPVOID lpReserved)
         if (!init_hook) {
             if (kiero::init(kiero::RenderType::D3D11) == kiero::Status::Success)
             {
+                DebugConsole::once("kiero.init.ok", "[startup] kiero D3D11 initialization succeeded");
                 // kiero::bind reports failure through its return value. The old
                 // code set init_hook unconditionally, so a failed bind left the
                 // cheat never initialising and never retrying.
                 if (kiero::bind(8, (void**)&oPresent, hkPresent) == kiero::Status::Success)
                 {
                     init_hook = true;
+                    DebugConsole::logf("[startup] Present hook installed");
                 }
                 else
                 {
+                    DebugConsole::rateLimited("kiero.bind.failed", "[startup] kiero Present bind failed; retrying");
                     kiero::shutdown();
                 }
+            }
+            else
+            {
+                DebugConsole::rateLimited("kiero.init.failed", "[startup] kiero D3D11 initialization failed; retrying");
             }
         }
 
@@ -175,6 +207,7 @@ DWORD WINAPI MainThread(LPVOID lpReserved)
     }
 
     kiero::shutdown();
+	DebugConsole::logf("[shutdown] disabling hooks and unloading");
 
     // destroy minhook
     MH_DisableHook(MH_ALL_HOOKS);
@@ -193,7 +226,10 @@ BOOL WINAPI DllMain(HMODULE hMod, DWORD dwReason, LPVOID lpReserved)
     {
     case DLL_PROCESS_ATTACH:
         DisableThreadLibraryCalls(hMod);
-        CreateThread(nullptr, 0, MainThread, hMod, 0, nullptr);
+        if (HANDLE worker = CreateThread(nullptr, 0, MainThread, hMod, 0, nullptr))
+            CloseHandle(worker);
+        else
+            OutputDebugStringA("[Conglomerate][fatal] failed to create worker thread\n");
         break;
     case DLL_PROCESS_DETACH:
         kiero::shutdown();

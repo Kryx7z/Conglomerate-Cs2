@@ -16,6 +16,7 @@
 #include "../../interfaces/interfaces.h"
 #include "../../config/config.h"
 #include "../../menu/menu.h"
+#include "../../utils/debug_console.h"
 using namespace Esp;
 
 LocalPlayerCached cached_local;
@@ -171,20 +172,29 @@ namespace
 }
 
 void Visuals::init() {
-    viewMatrix.viewMatrix = (viewmatrix_t*)M::getAbsoluteAddress(M::patternScan("client", "48 8D 0D ? ? ? ? 48 C1 E0 06"), 3, 0);
+    const uintptr_t matrixPattern = M::patternScan("client", "48 8D 0D ? ? ? ? 48 C1 E0 06");
+    viewMatrix.viewMatrix = (viewmatrix_t*)M::getAbsoluteAddress(matrixPattern, 3, 0);
+    DebugConsole::logf("[scan] view matrix: pattern=%p target=%p",
+        reinterpret_cast<void*>(matrixPattern), static_cast<void*>(viewMatrix.viewMatrix));
 }
 
 void Esp::cache()
 {
-    if (!I::EngineClient || !I::EngineClient->valid())
-        return;
-
     if (!I::GameEntity || !I::GameEntity->Instance)
+    {
+        DebugConsole::rateLimited("esp.entity.invalid", "[runtime] ESP cache waiting: entity system unavailable");
         return;
+    }
 
-    const int nMaxHighestEntity = I::GameEntity->Instance->GetHighestEntityIndex();
+    constexpr int nMaxHighestEntity = 64;
 
     cached_players.clear();
+    cached_local.reset();
+    int controllers = 0;
+    int validPawnHandles = 0;
+    int resolvedPawns = 0;
+    int alivePawns = 0;
+    bool foundLocal = false;
 
     for (int i = 1; i <= nMaxHighestEntity; i++)
     {
@@ -195,28 +205,27 @@ void Esp::cache()
         if (!Entity->handle().valid())
             continue;
 
-        SchemaClassInfoData_t* _class = nullptr;
-        Entity->dump_class_info(&_class);
-        if (!_class || !_class->szName)
+        if (!Entity->IsPlayerController())
             continue;
-
-        const uint32_t hash = HASH(_class->szName);
-        if (hash != HASH("CCSPlayerController"))
-            continue;
+        ++controllers;
 
         CCSPlayerController* Controller = reinterpret_cast<CCSPlayerController*>(Entity);
-        if (!Controller->m_hPawn().valid())
+        if (!Controller->m_hPlayerPawn().valid())
             continue;
+        ++validPawnHandles;
 
         if (Controller->IsLocalPlayer()) {
-            auto LocalPlayer = I::GameEntity->Instance->Get<C_CSPlayerPawn>(Controller->m_hPawn().index());
+            foundLocal = true;
+            auto LocalPlayer = I::GameEntity->Instance->Get<C_CSPlayerPawn>(Controller->m_hPlayerPawn().index());
             if (!LocalPlayer) {
                 cached_local.reset();
                 continue;
             }
+            ++resolvedPawns;
 
             cached_local.alive = LocalPlayer->m_iHealth() > 0;
             if (cached_local.alive) {
+                ++alivePawns;
                 cached_local.poisition = LocalPlayer->m_vOldOrigin();
                 cached_local.health = LocalPlayer->m_iHealth();
                 cached_local.handle = LocalPlayer->handle().index();
@@ -227,9 +236,13 @@ void Esp::cache()
             }
         }
         else {
-            auto Player = I::GameEntity->Instance->Get<C_CSPlayerPawn>(Controller->m_hPawn().index());
-            if (!Player || Player->m_iHealth() <= 0)
+            auto Player = I::GameEntity->Instance->Get<C_CSPlayerPawn>(Controller->m_hPlayerPawn().index());
+            if (!Player)
                 continue;
+            ++resolvedPawns;
+            if (Player->m_iHealth() <= 0)
+                continue;
+            ++alivePawns;
 
             const int health = Player->m_iHealth();
             const char* name = Controller->m_sSanitizedPlayerName();
@@ -245,26 +258,39 @@ void Esp::cache()
                 Player->m_bIsScoped(), Player->m_flFlashDuration(), carriesC4);
         }
     }
+
+    DebugConsole::rateLimited("esp.cache.summary",
+        "[runtime] ESP cache scan: highest=%d controllers=%d valid_handles=%d resolved_pawns=%d alive=%d cached_players=%llu local_controller=%d",
+        nMaxHighestEntity, controllers, validPawnHandles, resolvedPawns, alivePawns,
+        static_cast<unsigned long long>(cached_players.size()), foundLocal ? 1 : 0);
 }
 
 void Visuals::esp() {
     // Only proceed if at least one ESP component is enabled
     if (!Config::esp && !Config::showHealth && !Config::espFill && !Config::showNameTags &&
         !Config::flags && !Config::skeleton) {
+        DebugConsole::once("esp.disabled", "[runtime] ESP renderer reached; all ESP components are disabled");
         return; // Exit early if no component is enabled
     }
 
     //@better example of getting local pawn
     if (!H::oGetLocalPlayer)
+    {
+        DebugConsole::rateLimited("esp.local_fn.missing", "[runtime] ESP skipped: GetLocalPawn function pointer is null");
         return;
+    }
 
     C_CSPlayerPawn* localPawn = H::oGetLocalPlayer(0);
     if (!localPawn) {
+        DebugConsole::rateLimited("esp.local.null", "[runtime] ESP skipped: GetLocalPawn returned null");
         return;
     }
 
     if (cached_players.empty())
+    {
+        DebugConsole::rateLimited("esp.cache.empty", "[runtime] ESP skipped: player cache is empty");
         return;
+    }
 
     for (const auto& Player : cached_players)
     {
@@ -283,6 +309,7 @@ void Visuals::esp() {
         if (!viewMatrix.WorldToScreen(feetPos, feetScreen) ||
             !viewMatrix.WorldToScreen(headPos, headScreen))
             continue;
+		DebugConsole::once("esp.first_player_drawn", "[runtime] ESP projected and drew at least one cached player");
 
         float boxHeight = (feetScreen.y - headScreen.y) * 1.3f;
         float boxWidth = boxHeight / 2.0f;

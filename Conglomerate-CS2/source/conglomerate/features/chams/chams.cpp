@@ -1,10 +1,14 @@
 #include <algorithm>
+#include <array>
+#include <limits>
 #include "chams.h"
 #include "../../hooks/hooks.h"
 #include "../../config/config.h"
 #include "../../../../external/imgui/imgui.h"
 #include "../../utils/math/utlstronghandle/utlstronghandle.h"
 #include "../../utils/memory/seh_diagnostics.h"
+#include "../../utils/memory/safe_memory.h"
+#include "../../utils/debug_console.h"
 #include "../../../cs2/entity/C_Material/C_Material.h"
 #include "../../interfaces/interfaces.h"
 #include "../../interfaces/CGameEntitySystem/CGameEntitySystem.h"
@@ -193,11 +197,112 @@ bool chams::Materials::init()
         resourceMaterials[ILLUMINATE].mat_invs != nullptr &&
         resourceMaterials[GLOW].mat != nullptr &&
         resourceMaterials[GLOW].mat_invs != nullptr;
+	DebugConsole::logf("[materials] create results flat=%d/%d illuminate=%d/%d glow=%d/%d",
+		resourceMaterials[FLAT].mat != nullptr, resourceMaterials[FLAT].mat_invs != nullptr,
+		resourceMaterials[ILLUMINATE].mat != nullptr, resourceMaterials[ILLUMINATE].mat_invs != nullptr,
+		resourceMaterials[GLOW].mat != nullptr, resourceMaterials[GLOW].mat_invs != nullptr);
 
     return allCreated;
 }
 
-ChamsEntity chams::GetTargetType(C_BaseEntity* render_ent) noexcept {
+static C_CSPlayerPawn* findPlayerPawn(C_BaseEntity* renderEntity, CBaseHandle sceneOwner)
+{
+    if (!renderEntity || !I::GameEntity || !I::GameEntity->Instance)
+        return nullptr;
+
+    // A scene owner may be the player controller rather than its pawn. Resolve
+    // that owner directly before comparing against the controller list.
+    if (renderEntity->IsPlayerController())
+    {
+        auto* controller = reinterpret_cast<CCSPlayerController*>(renderEntity);
+        const CBaseHandle pawnHandle = controller->m_hPlayerPawn();
+        if (pawnHandle.valid())
+        {
+            C_CSPlayerPawn* pawn = I::GameEntity->Instance->Get<C_CSPlayerPawn>(pawnHandle);
+            if (pawn)
+                return pawn;
+        }
+    }
+
+    for (int i = 1; i <= 64; ++i)
+    {
+        C_BaseEntity* entity = I::GameEntity->Instance->Get(i);
+        if (!entity || !entity->IsPlayerController())
+            continue;
+
+        auto* controller = reinterpret_cast<CCSPlayerController*>(entity);
+        const CBaseHandle pawnHandle = controller->m_hPlayerPawn();
+        if (!pawnHandle.valid())
+            continue;
+
+        // Scene-system owners are handles. Match the complete handle first,
+        // including its serial, rather than relying only on the entity pointer
+        // returned by the index lookup.
+        if (sceneOwner.valid() && pawnHandle == sceneOwner)
+        {
+            C_CSPlayerPawn* pawn = I::GameEntity->Instance->Get<C_CSPlayerPawn>(pawnHandle);
+            if (pawn)
+                return pawn;
+        }
+
+        C_CSPlayerPawn* pawn = I::GameEntity->Instance->Get<C_CSPlayerPawn>(pawnHandle);
+        if (pawn == renderEntity)
+            return pawn;
+    }
+
+    return nullptr;
+}
+
+enum class SceneOwnerKind : std::uint8_t
+{
+    UNKNOWN,
+    PLAYER_PAWN,
+    HANDS,
+    VIEWMODEL
+};
+
+static SceneOwnerKind getSceneOwnerKind(C_BaseEntity* entity, const char** className = nullptr) noexcept
+{
+    if (className)
+        *className = nullptr;
+    if (!entity)
+        return SceneOwnerKind::UNKNOWN;
+
+    // Resolve the schema class through CEntityIdentity's current entity-class
+    // pointer. The dump_class_info vfunc returned null for live scene owners
+    // in the latest run, so it cannot be the classifier for this render path.
+    std::uintptr_t identity = 0;
+    std::uintptr_t entityClass = 0;
+    std::uintptr_t classInfo = 0;
+    const char* name = nullptr;
+    if (!SafeMemory::read(reinterpret_cast<std::uintptr_t>(entity) + 0x10u, identity) || !identity ||
+        !SafeMemory::read(identity + 0x8u, entityClass) || !entityClass ||
+        !SafeMemory::read(entityClass + 0x58u, classInfo) || !classInfo ||
+        !SafeMemory::read(classInfo + 0x8u, name) || !name)
+        return SceneOwnerKind::UNKNOWN;
+
+    const std::uint32_t classHash = hash_32_fnv1a_const(name);
+    if (className)
+        *className = name;
+    if (classHash == hash_32_fnv1a_const("C_CSPlayerPawn") ||
+            classHash == hash_32_fnv1a_const("C_CSPlayerPawnBase"))
+        return SceneOwnerKind::PLAYER_PAWN;
+
+    if (classHash == hash_32_fnv1a_const("C_ViewmodelAttachmentModel") ||
+            classHash == hash_32_fnv1a_const("C_CS2HudModelArms"))
+        return SceneOwnerKind::HANDS;
+
+    if (classHash == hash_32_fnv1a_const("C_CSGOViewModel") ||
+            classHash == hash_32_fnv1a_const("C_CS2HudModelWeapon"))
+        return SceneOwnerKind::VIEWMODEL;
+
+    return SceneOwnerKind::UNKNOWN;
+}
+
+ChamsEntity chams::GetTargetType(C_BaseEntity* render_ent, CBaseHandle sceneOwner) noexcept {
+    if (!render_ent)
+        return ChamsEntity::INVALID;
+
     if (!H::oGetLocalPlayer)
         return ChamsEntity::INVALID;
 
@@ -205,27 +310,37 @@ ChamsEntity chams::GetTargetType(C_BaseEntity* render_ent) noexcept {
     if (!local)
         return ChamsEntity::INVALID;
 
-    if (render_ent->IsViewmodelAttachment())
+    const SceneOwnerKind ownerKind = getSceneOwnerKind(render_ent);
+    auto* player = ownerKind == SceneOwnerKind::PLAYER_PAWN
+        ? reinterpret_cast<C_CSPlayerPawn*>(render_ent)
+        : findPlayerPawn(render_ent, sceneOwner);
+    if (player)
+    {
+        // Keep target selection on the same schema-resolved fields used by
+        // aim/ESP. The legacy hard-coded offsets can reject live pawns or
+        // read the wrong team, preventing the enabled chams branch from being
+        // selected on a newer build.
+        const int health = player->getHealth();
+        if (health <= 0)
+        {
+            DebugConsole::rateLimited("chams.target.nonpositive_health",
+                "[runtime] GeneratePrimitives resolved a pawn but rejected it: health=%d owner_index=%d",
+                health, sceneOwner.valid() ? sceneOwner.index() : -1);
+            return ChamsEntity::INVALID;
+        }
+
+        return player->getTeam() == local->getTeam()
+            ? ChamsEntity::TEAM
+            : ChamsEntity::ENEMY;
+    }
+
+    if (ownerKind == SceneOwnerKind::HANDS)
         return ChamsEntity::HANDS;
 
-    if (render_ent->IsViewmodel())
+    if (ownerKind == SceneOwnerKind::VIEWMODEL)
         return ChamsEntity::VIEWMODEL;
 
-    if (!render_ent->IsBasePlayer() && !render_ent->IsPlayerController())
-        return ChamsEntity::INVALID;
-
-    auto player = (C_CSPlayerPawn*)render_ent;
-    if (!player)
-        return ChamsEntity::INVALID;
-
-    auto alive = player->m_iHealth() > 0;
-    if (!alive)
-        return ChamsEntity::INVALID;
-
-    if (player->m_iTeamNum() == local->m_iTeamNum())
-        return ChamsEntity::INVALID;
-
-    return ChamsEntity::ENEMY;
+    return ChamsEntity::INVALID;
 }
 
 CMaterial2* GetMaterial(int type, bool invisible)
@@ -238,124 +353,278 @@ CMaterial2* GetMaterial(int type, bool invisible)
     return invisible ? resourceMaterials[type].mat_invs : resourceMaterials[type].mat;
 }
 
-static void ApplyMeshMaterial(CMeshData* firstMesh, int meshCount, CMaterial2* material, const ImVec4& color)
+struct PrimitiveOutputBuffer
 {
-    if (!firstMesh || meshCount < 1 || !material)
-        return;
+    std::uintptr_t fixedData;
+    std::int32_t fixedCapacity;
+    std::int32_t fixedCount;
+    std::int32_t overflowCount;
+    std::uint32_t reserved;
+    std::uintptr_t overflowData;
+    std::int32_t overflowCapacity;
+    std::uint32_t overflowFlags;
+};
 
-    for (int i = 0; i < meshCount; ++i)
-    {
-        CMeshData* mesh = firstMesh + i;
-        mesh->pMaterial = material;
-        mesh->pMaterial2 = material;
-        mesh->color.r = static_cast<uint8_t>(color.x * 255.0f);
-        mesh->color.g = static_cast<uint8_t>(color.y * 255.0f);
-        mesh->color.b = static_cast<uint8_t>(color.z * 255.0f);
-        mesh->color.a = static_cast<uint8_t>(color.w * 255.0f);
-    }
+static_assert(sizeof(PrimitiveOutputBuffer) == 0x28);
+static_assert(sizeof(CMeshData) == 0x70, "CMeshData primitive layout changed");
+
+static constexpr std::uintptr_t kPrimitiveDrawOrderOffset = 0x58u;
+static constexpr std::uintptr_t kPrimitiveFlagsOffset = 0x62u;
+static constexpr std::uint16_t kPrimitiveDrawLast = 0x8u;
+
+static bool IsValidPrimitiveBuffer(const PrimitiveOutputBuffer& buffer)
+{
+    if (buffer.fixedCapacity < 0 || buffer.overflowCapacity < 0 ||
+        buffer.fixedCount < 0 || buffer.overflowCount < 0 ||
+        buffer.fixedCount > buffer.fixedCapacity || buffer.overflowCount > buffer.overflowCapacity ||
+        (buffer.fixedCount && !buffer.fixedData) || (buffer.overflowCount && !buffer.overflowData))
+        return false;
+
+    constexpr std::int32_t maxPrimitiveCount = 1 << 20;
+    return buffer.fixedCount <= maxPrimitiveCount - buffer.overflowCount;
 }
 
-void __fastcall chams_hook_impl(void* a1, void* a2, CMeshData* pMeshScene, int nMeshCount, void* pSceneView, void* pSceneLayer, void* pUnk, void* pUnk2)
+static std::int32_t PrimitiveCount(const PrimitiveOutputBuffer& buffer)
 {
-    static auto original = H::DrawArray.GetOriginal();
+    return buffer.fixedCount + buffer.overflowCount;
+}
+
+static std::uintptr_t PrimitiveAt(const PrimitiveOutputBuffer& buffer, std::int32_t index)
+{
+    if (index < 0 || index >= PrimitiveCount(buffer))
+        return 0;
+
+    if (index < buffer.fixedCount)
+        return buffer.fixedData + static_cast<std::uintptr_t>(index) * 0x70u;
+
+    return buffer.overflowData + static_cast<std::uintptr_t>(index - buffer.fixedCount) * 0x70u;
+}
+
+using GeneratePrimitivesFn = void(__fastcall*)(void*, void*, void*, void*);
+
+static bool AppendChamsLayer(GeneratePrimitivesFn original, void* thisptr, void* sceneObject,
+    void* sceneView, void* primitiveBuffer, CMaterial2* material, const ImVec4& color,
+    bool drawLast, bool& originalCalled)
+{
+    if (!original || !material)
+        return false;
+
+    PrimitiveOutputBuffer before{};
+    if (!SafeMemory::read(reinterpret_cast<std::uintptr_t>(primitiveBuffer), before) ||
+        !IsValidPrimitiveBuffer(before))
+        return false;
+
+    original(thisptr, sceneObject, sceneView, primitiveBuffer);
+    originalCalled = true;
+
+    PrimitiveOutputBuffer after{};
+    if (!SafeMemory::read(reinterpret_cast<std::uintptr_t>(primitiveBuffer), after) ||
+        !IsValidPrimitiveBuffer(after))
+        return true;
+
+    const auto begin = PrimitiveCount(before);
+    const auto end = PrimitiveCount(after);
+    if (end <= begin)
+        return true;
+
+    const Color replacement{
+        static_cast<std::uint8_t>(color.x * 255.0f),
+        static_cast<std::uint8_t>(color.y * 255.0f),
+        static_cast<std::uint8_t>(color.z * 255.0f),
+        static_cast<std::uint8_t>(color.w * 255.0f)
+    };
+    const auto materialAddress = reinterpret_cast<std::uintptr_t>(material);
+    for (auto i = begin; i < end; ++i)
+    {
+        const auto primitive = PrimitiveAt(after, i);
+        if (!primitive)
+            continue;
+        SafeMemory::write(primitive + 0x20u, materialAddress);
+        SafeMemory::write(primitive + 0x28u, materialAddress);
+        SafeMemory::write(primitive + 0x50u, replacement);
+
+        // The renderer may reorder translucent batches after GeneratePrimitives.
+        // Keep the depth-tested pass last so it replaces ignore-Z color on visible pixels.
+        if (drawLast)
+        {
+            std::uint16_t flags{};
+            if (SafeMemory::read(primitive + kPrimitiveFlagsOffset, flags))
+                SafeMemory::write(primitive + kPrimitiveFlagsOffset,
+                    static_cast<std::uint16_t>(flags | kPrimitiveDrawLast));
+
+            std::int32_t drawOrder{};
+            if (SafeMemory::read(primitive + kPrimitiveDrawOrderOffset, drawOrder) &&
+                drawOrder < (std::numeric_limits<std::int32_t>::max)())
+                SafeMemory::write(primitive + kPrimitiveDrawOrderOffset, drawOrder + 1);
+        }
+    }
+    return true;
+}
+
+void __fastcall chams::generatePrimitivesHook(void* thisptr, void* sceneObject, void* sceneView, void* primitiveBuffer)
+{
+    const auto original = H::GeneratePrimitives.GetOriginal();
     if (!original)
         return;
 
-    if (!I::EngineClient || !I::EngineClient->valid())
-        return original(a1, a2, pMeshScene, nMeshCount, pSceneView, pSceneLayer, pUnk, pUnk2);
-    if (!I::GameEntity || !I::GameEntity->Instance)
-        return original(a1, a2, pMeshScene, nMeshCount, pSceneView, pSceneLayer, pUnk, pUnk2);
-    if (!H::oGetLocalPlayer)
-        return original(a1, a2, pMeshScene, nMeshCount, pSceneView, pSceneLayer, pUnk, pUnk2);
-    auto local_player = H::oGetLocalPlayer(0);
-    if (!local_player)
-        return original(a1, a2, pMeshScene, nMeshCount, pSceneView, pSceneLayer, pUnk, pUnk2);
-    if (!pMeshScene)
-        return original(a1, a2, pMeshScene, nMeshCount, pSceneView, pSceneLayer, pUnk, pUnk2);
+    DebugConsole::once("chams.generate.first", "[runtime] GeneratePrimitives detour reached; scene=%p buffer=%p", sceneObject, primitiveBuffer);
 
-    if (!pMeshScene->pSceneAnimatableObject)
-        return original(a1, a2, pMeshScene, nMeshCount, pSceneView, pSceneLayer, pUnk, pUnk2);
-
-    if (nMeshCount < 1)
-        return original(a1, a2, pMeshScene, nMeshCount, pSceneView, pSceneLayer, pUnk, pUnk2);
-
-    CMeshData* render_data = pMeshScene;
-    if (!render_data)
-        return original(a1, a2, pMeshScene, nMeshCount, pSceneView, pSceneLayer, pUnk, pUnk2);
-
-    if (!render_data->pSceneAnimatableObject)
-        return original(a1, a2, pMeshScene, nMeshCount, pSceneView, pSceneLayer, pUnk, pUnk2);
-
-    auto render_ent = render_data->pSceneAnimatableObject->Owner();
-    if (!render_ent.valid())
-        return original(a1, a2, pMeshScene, nMeshCount, pSceneView, pSceneLayer, pUnk, pUnk2);
-
-    auto entity = I::GameEntity->Instance->Get(render_ent);
-    if (!entity)
-        return original(a1, a2, pMeshScene, nMeshCount, pSceneView, pSceneLayer, pUnk, pUnk2);
-
-    const auto target = chams::GetTargetType(entity);
-
-    if (target == ChamsEntity::VIEWMODEL && Config::viewmodelChams) {
-        CMaterial2* mat = GetMaterial(Config::viewmodelChamsMaterial, false);
-        if (!mat)
-            return original(a1, a2, pMeshScene, nMeshCount, pSceneView, pSceneLayer, pUnk, pUnk2);
-        ApplyMeshMaterial(pMeshScene, nMeshCount, mat, Config::colViewmodelChams);
-        return original(a1, a2, pMeshScene, nMeshCount, pSceneView, pSceneLayer, pUnk, pUnk2);
+    bool originalCalled = false;
+    CBaseHandle ownerHandle;
+    C_BaseEntity* owner = nullptr;
+    if (!sceneObject || !primitiveBuffer)
+        DebugConsole::rateLimited("chams.generate.arguments", "[runtime] GeneratePrimitives skipped owner lookup: scene or primitive buffer is null");
+    else if (!SafeMemory::read(reinterpret_cast<std::uintptr_t>(sceneObject) + 0xC0u, ownerHandle))
+        DebugConsole::rateLimited("chams.generate.owner_read", "[runtime] GeneratePrimitives could not read scene owner handle at +0xC0");
+    else if (!ownerHandle.valid())
+        DebugConsole::rateLimited("chams.generate.owner_invalid", "[runtime] GeneratePrimitives scene owner handle is invalid");
+    else if (!I::GameEntity || !I::GameEntity->Instance)
+        DebugConsole::rateLimited("chams.generate.entity_system", "[runtime] GeneratePrimitives owner lookup skipped: entity system unavailable");
+    else
+    {
+        owner = I::GameEntity->Instance->Get(ownerHandle);
+        if (!owner)
+            DebugConsole::rateLimited("chams.generate.owner_unresolved",
+                "[runtime] GeneratePrimitives could not resolve scene owner handle_index=%d", ownerHandle.index());
     }
 
-    if (target == ChamsEntity::HANDS && Config::armChams) {
-        CMaterial2* mat = GetMaterial(Config::armChamsMaterial, false);
-        if (!mat)
-            return original(a1, a2, pMeshScene, nMeshCount, pSceneView, pSceneLayer, pUnk, pUnk2);
-        ApplyMeshMaterial(pMeshScene, nMeshCount, mat, Config::colArmChams);
-        return original(a1, a2, pMeshScene, nMeshCount, pSceneView, pSceneLayer, pUnk, pUnk2);
+    const auto target = owner ? chams::GetTargetType(owner, ownerHandle) : ChamsEntity::INVALID;
+    if (owner && target == ChamsEntity::INVALID)
+    {
+        const char* className = nullptr;
+        const auto kind = getSceneOwnerKind(owner, &className);
+        DebugConsole::rateLimited("chams.generate.unclassified",
+            "[runtime] GeneratePrimitives owner did not classify: entity=%p handle_index=%d class=%s kind=%d",
+            owner, ownerHandle.index(), className ? className : "null", static_cast<int>(kind));
+    }
+    auto apply = [&](int type, bool invisible, const ImVec4& tint)
+    {
+        CMaterial2* material = GetMaterial(type, invisible);
+        if (!material)
+            return;
+        AppendChamsLayer(original, thisptr, sceneObject, sceneView, primitiveBuffer, material, tint,
+            !invisible, originalCalled);
+    };
+
+    if (target == ChamsEntity::ENEMY)
+    {
+        DebugConsole::once("chams.generate.enemy", "[runtime] GeneratePrimitives classified enemy; visible=%d occluded=%d material=%d", Config::enemyChams, Config::enemyChamsInvisible, Config::chamsMaterial);
+        if (Config::enemyChamsInvisible)
+            apply(Config::chamsMaterial, true, Config::colVisualChamsIgnoreZ);
+        if (Config::enemyChams)
+            apply(Config::chamsMaterial, false, Config::colVisualChams);
+    }
+    else if (target == ChamsEntity::TEAM)
+    {
+        DebugConsole::once("chams.generate.team", "[runtime] GeneratePrimitives classified teammate; visible=%d occluded=%d material=%d", Config::teamChams, Config::teamChamsInvisible, Config::chamsMaterial);
+        if (Config::teamChamsInvisible)
+            apply(Config::chamsMaterial, true, Config::teamcolVisualChamsIgnoreZ);
+        if (Config::teamChams)
+            apply(Config::chamsMaterial, false, Config::teamcolVisualChams);
+    }
+    else if (target == ChamsEntity::HANDS && Config::armChams)
+    {
+        DebugConsole::once("chams.generate.hands", "[runtime] GeneratePrimitives classified arms; material=%d", Config::armChamsMaterial);
+        apply(Config::armChamsMaterial, false, Config::colArmChams);
+    }
+    else if (target == ChamsEntity::VIEWMODEL && Config::viewmodelChams)
+    {
+        DebugConsole::once("chams.generate.viewmodel", "[runtime] GeneratePrimitives classified weapon; material=%d", Config::viewmodelChamsMaterial);
+        apply(Config::viewmodelChamsMaterial, false, Config::colViewmodelChams);
     }
 
-    if (target != ENEMY)
-        return original(a1, a2, pMeshScene, nMeshCount, pSceneView, pSceneLayer, pUnk, pUnk2);
-
-    bool og = !Config::enemyChams && !Config::enemyChamsInvisible;
-    if (og)
-        return original(a1, a2, pMeshScene, nMeshCount, pSceneView, pSceneLayer, pUnk, pUnk2);
-
-    if (Config::enemyChamsInvisible) {
-        CMaterial2* mat = GetMaterial(Config::chamsMaterial, true);
-        if (mat) {
-            ApplyMeshMaterial(pMeshScene, nMeshCount, mat, Config::colVisualChamsIgnoreZ);
-
-            original(a1, a2, pMeshScene, nMeshCount, pSceneView, pSceneLayer, pUnk, pUnk2);
-
-            if (!Config::enemyChams)
-                return;
-        }
-    }
-
-    if (Config::enemyChams) {
-        CMaterial2* mat = GetMaterial(Config::chamsMaterial, false);
-        if (!mat)
-            return original(a1, a2, pMeshScene, nMeshCount, pSceneView, pSceneLayer, pUnk, pUnk2);
-        ApplyMeshMaterial(pMeshScene, nMeshCount, mat, Config::colVisualChams);
-        return original(a1, a2, pMeshScene, nMeshCount, pSceneView, pSceneLayer, pUnk, pUnk2);
-    }
-
-    // If we get here, neither chams type is enabled, so just render normally
-    return original(a1, a2, pMeshScene, nMeshCount, pSceneView, pSceneLayer, pUnk, pUnk2);
+    if (!originalCalled)
+        original(thisptr, sceneObject, sceneView, primitiveBuffer);
 }
 
-void __fastcall chams::hook(void* a1, void* a2, CMeshData* pMeshScene, int nMeshCount, void* pSceneView, void* pSceneLayer, void* pUnk, void* pUnk2)
+struct MeshDrawState
 {
+    CMaterial2* material;
+    CMaterial2* material2;
+    Color color;
+};
+
+static constexpr int kMaxCapturedMeshCount = 1024;
+
+static bool CaptureMeshDrawState(CMeshData* meshes, int meshCount, MeshDrawState* states)
+{
+    if (!meshes || !states || meshCount < 1 || meshCount > kMaxCapturedMeshCount)
+        return false;
+
+    const auto base = reinterpret_cast<std::uintptr_t>(meshes);
+    for (int i = 0; i < meshCount; ++i)
+    {
+        const auto mesh = base + static_cast<std::uintptr_t>(i) * sizeof(CMeshData);
+        auto& state = states[i];
+        if (!SafeMemory::read(mesh + offsetof(CMeshData, pMaterial), state.material) ||
+            !SafeMemory::read(mesh + offsetof(CMeshData, pMaterial2), state.material2) ||
+            !SafeMemory::read(mesh + offsetof(CMeshData, color), state.color))
+        {
+            return false;
+        }
+    }
+    return true;
+}
+
+static void RestoreMeshDrawState(CMeshData* meshes, const MeshDrawState* states, int meshCount) noexcept
+{
+    if (!meshes || !states || meshCount < 1 || meshCount > kMaxCapturedMeshCount)
+        return;
+
+    const auto base = reinterpret_cast<std::uintptr_t>(meshes);
+    for (int i = 0; i < meshCount; ++i)
+    {
+        const auto mesh = base + static_cast<std::uintptr_t>(i) * sizeof(CMeshData);
+        const auto& state = states[i];
+        SafeMemory::write(mesh + offsetof(CMeshData, pMaterial), state.material);
+        SafeMemory::write(mesh + offsetof(CMeshData, pMaterial2), state.material2);
+        SafeMemory::write(mesh + offsetof(CMeshData, color), state.color);
+    }
+}
+
+using DrawArrayFn = decltype(H::DrawArray.GetOriginal());
+
+std::uintptr_t __fastcall chams_hook_impl(DrawArrayFn original, void* a1, void* a2, CMeshData* pMeshScene, int nMeshCount, int a5, void* a6, void* a7, void* a8, bool allowOverrides, volatile bool& originalInvoked)
+{
+    if (!original)
+        return 0;
+
+    if (allowOverrides)
+        H::applyNightPrimitiveColor(pMeshScene, nMeshCount);
+
+    originalInvoked = true;
+    return original(a1, a2, pMeshScene, nMeshCount, a5, a6, a7, a8);
+}
+
+static std::uintptr_t invokeChamsHookSafely(DrawArrayFn original, void* a1, void* a2, CMeshData* pMeshScene, int nMeshCount, int a5, void* a6, void* a7, void* a8, bool allowOverrides)
+{
+	volatile bool originalInvoked = false;
     __try
     {
-        chams_hook_impl(a1, a2, pMeshScene, nMeshCount, pSceneView, pSceneLayer, pUnk, pUnk2);
+		return chams_hook_impl(original, a1, a2, pMeshScene, nMeshCount, a5, a6, a7, a8, allowOverrides, originalInvoked);
     }
-    __except (SehDiagnostics::handle("chams.hook"))
+    __except (SehDiagnostics::handle("chams.hook", GetExceptionInformation()))
     {
-        // NOTE: deliberately NOT calling original() here. if this still crashes,
-        // calling original() would too (that's what crashed originally, even on
-        // the shortest code path). The DrawArray address itself has since been
-        // independently re-verified as correct against a fresh signature dump,
-        // so if this keeps crashing the issue is elsewhere (e.g. argument/
-        // calling-convention mismatch) and needs live debugger verification.
+		// Preserve the game's scene draw if our classification/material path fails.
+		// Do not retry when the original draw itself was already entered.
+		if (!originalInvoked && original)
+			return original(a1, a2, pMeshScene, nMeshCount, a5, a6, a7, a8);
+		return 0;
     }
+}
+
+std::uintptr_t __fastcall chams::hook(void* a1, void* a2, CMeshData* pMeshScene, int nMeshCount, int a5, void* a6, void* a7, void* a8)
+{
+	DebugConsole::once("chams.hook.first", "[runtime] DrawArray detour reached; mesh count=%d mesh pointer=%p", nMeshCount, pMeshScene);
+	const auto original = H::DrawArray.GetOriginal();
+	const bool overridesRequested = Config::Night;
+	std::array<MeshDrawState, kMaxCapturedMeshCount> originalMeshState{};
+	const bool allowOverrides = !overridesRequested ||
+		CaptureMeshDrawState(pMeshScene, nMeshCount, originalMeshState.data());
+	if (overridesRequested && !allowOverrides)
+		DebugConsole::rateLimited("chams.mesh_state_unavailable", "[runtime] scene overrides skipped: mesh state could not be captured (count=%d)", nMeshCount);
+	const auto drawResult = invokeChamsHookSafely(original, a1, a2, pMeshScene, nMeshCount, a5, a6, a7, a8, allowOverrides);
+	if (overridesRequested && allowOverrides)
+		RestoreMeshDrawState(pMeshScene, originalMeshState.data(), nMeshCount);
+	return drawResult;
 }

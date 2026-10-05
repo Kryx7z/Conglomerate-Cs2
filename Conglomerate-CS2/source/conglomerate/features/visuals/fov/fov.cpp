@@ -3,6 +3,7 @@
 #include "../../../config/config.h"
 #include "../../../interfaces/interfaces.h"
 #include "../../../utils/memory/safe_memory.h"
+#include "../../../utils/debug_console.h"
 
 static float hkGetRenderFov_impl(void* rcx)
 {
@@ -34,6 +35,7 @@ static float hkGetRenderFov_impl(void* rcx)
 }
 
 float H::hkGetRenderFov(void* rcx) {
+	DebugConsole::once("fov.render_hook.first", "[runtime] GetRenderFov detour reached; custom FOV enabled=%d", Config::fovEnabled ? 1 : 0);
 	__try
 	{
 		return hkGetRenderFov_impl(rcx);
@@ -82,6 +84,7 @@ static void ApplyOverrideViewFov(void* viewSetup)
 
 void __fastcall H::hkOverrideView(void* self, void* viewSetup)
 {
+	DebugConsole::once("fov.override_hook.first", "[runtime] OverrideView detour reached; view setup=%p", viewSetup);
 	static auto original = H::OverrideView.GetOriginal();
 	if (original)
 		original(self, viewSetup);

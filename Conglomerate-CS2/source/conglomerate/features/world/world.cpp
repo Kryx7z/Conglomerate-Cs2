@@ -9,6 +9,7 @@
 #include "../../utils/memory/patternscan/patternscan.h"
 #include "../../utils/memory/gaa/gaa.h"
 #include "../../utils/memory/safe_memory.h"
+#include "../../utils/debug_console.h"
 #include "../../../cs2/entity/C_BaseEntity/C_BaseEntity.h"
 
 namespace
@@ -40,17 +41,21 @@ namespace
 {
     static std::uint8_t colorByte(float component)
     {
-        component = std::clamp(component, 0.0f, 1.0f);
-        return static_cast<std::uint8_t>(component * 255.0f);
+        return static_cast<std::uint8_t>(std::clamp(component, 0.0f, 255.0f) + 0.5f);
     }
 
-    static C_ByteColor4 configuredNightColor()
+    static C_ByteColor4 tintWorldColor(const C_ByteColor4& original)
     {
+        // Keep primitive and sky-object tinting shaded while aggregate walls use Velo's direct color pass.
+        constexpr float redWeight = 0.2126f;
+        constexpr float greenWeight = 0.7152f;
+        constexpr float blueWeight = 0.0722f;
+        const float shade = redWeight * original.r + greenWeight * original.g + blueWeight * original.b;
         return {
-            colorByte(Config::NightColor.x),
-            colorByte(Config::NightColor.y),
-            colorByte(Config::NightColor.z),
-            255
+            colorByte(shade * Config::NightColor.x),
+            colorByte(shade * Config::NightColor.y),
+            colorByte(shade * Config::NightColor.z),
+            original.a
         };
     }
 
@@ -84,24 +89,21 @@ namespace
 		if (!readMemory(objectArray + 0x8u, objectData) || !objectData)
 			return false;
 
-		const auto queueGlobal = resolveLightDataQueueGlobal();
-		std::uintptr_t queue = 0;
-		if (queueGlobal)
-			readMemory(queueGlobal, queue);
-
-		if (!queue && I::SceneSystem)
-		{
-			readMemory(reinterpret_cast<std::uintptr_t>(I::SceneSystem) +
-				offsetof(ISceneSystem, light_data_queue), queue);
-		}
-		if (!queue || !readMemory(queue + 0x18u, lightBase) || !lightBase)
-			return false;
-
+		// Velo confirms +0x30 is the source index pointer and +0x38 is the output record index.
 		if (!readMemory(objectData + 0x4u, count) ||
-			!readMemory(objectData + 0x30u, startIndex))
+			!readMemory(objectData + 0x38u, startIndex))
 			return false;
 
-		return count > 0 && count <= (1 << 20) && startIndex >= 0 && startIndex <= (1 << 22);
+		if (count <= 0 || count > (1 << 20) || startIndex < 0 || startIndex > (1 << 22))
+			return false;
+
+		std::uintptr_t queue = 0;
+		const auto queueGlobal = resolveLightDataQueueGlobal();
+		if (!queueGlobal || !readMemory(queueGlobal, queue) || !queue ||
+			!readMemory(queue + 0x18u, lightBase) || !lightBase)
+			return false;
+
+		return true;
 	}
 
 	static bool readSceneColor(std::uintptr_t address, C_ByteColor4& color)
@@ -157,19 +159,67 @@ static void applyNightModeColoring(c_aggregate_object_array* objects)
 	if (!readSceneBatch(objects, lightBase, count, startIndex))
 		return;
 
-	const C_ByteColor4 configured = configuredNightColor();
-
+	int written = 0;
 	for (int i = 0; i < count; ++i)
 	{
 		const auto address = lightBase + (static_cast<std::uintptr_t>(startIndex + i) << 5);
 		C_ByteColor4 current{};
-		if (readSceneColor(address, current))
-			writeSceneColor(address, C_ByteColor4{ configured.r, configured.g, configured.b, current.a });
+		if (!readSceneColor(address, current))
+			continue;
+
+		const C_ByteColor4 configured{
+			colorByte(Config::NightColor.x * 255.0f),
+			colorByte(Config::NightColor.y * 255.0f),
+			colorByte(Config::NightColor.z * 255.0f),
+			current.a
+		};
+		if (writeSceneColor(address, configured))
+			++written;
 	}
+	DebugConsole::once("world.night.aggregate_color",
+		"[runtime] Night wall tint wrote aggregate records: count=%d written=%d", count, written);
+}
+
+static void applyNightExposure(std::uint32_t hash, __m128i*& value)
+{
+	constexpr std::uint32_t brightnessExposureBias = 0x2858A7F6;
+	constexpr std::uint32_t renderOnlyExposureBias = 0x8B3B1F63;
+	static __m128 nightExposure{};
+	if (Config::Night &&
+		(hash == brightnessExposureBias || hash == renderOnlyExposureBias))
+	{
+		constexpr float darkness = 0.5f;
+		DebugConsole::once("world.night.exposure.hit",
+			"[runtime] Night exposure parameter reached: hash=0x%08X darkness=%.2f", hash, darkness);
+		nightExposure = _mm_set_ps1(-darkness * 4.0f);
+		value = reinterpret_cast<__m128i*>(&nightExposure);
+	}
+
+}
+
+std::uintptr_t __fastcall H::hkSetShaderParam(__m128i* map, std::uint32_t hash, __m128i* value)
+{
+	const auto original = H::SetShaderParam.GetOriginal();
+	if (!original)
+		return 0;
+
+	applyNightExposure(hash, value);
+	return original(map, hash, value);
+}
+
+std::uintptr_t __fastcall H::hkSetPostprocessVec(__m128i* map, std::uint32_t hash, __m128i* value)
+{
+	const auto original = H::SetPostprocessVec.GetOriginal();
+	if (!original)
+		return 0;
+
+	applyNightExposure(hash, value);
+	return original(map, hash, value);
 }
 
 void __fastcall H::hkUpdateSceneObject(void* a1, void* a2, c_aggregate_object_array* a3)
 {
+	DebugConsole::once("world.scene_hook.first", "[runtime] UpdateWallsObject/DrawAggregateSceneObjectArray detour reached");
 	static auto original = H::UpdateWallsObject.GetOriginal();
 	if (!original)
 		return;
@@ -197,67 +247,46 @@ static bool writeSkyState(std::uintptr_t address, std::uint32_t tintOffset,
         writeMemory(address + brightnessOffset, brightness);
 }
 
-static bool getClassInfoSafe(C_BaseEntity* entity, SchemaClassInfoData_t*& classInfo)
-{
-    if (!entity)
-        return false;
-
-    __try
-    {
-        entity->dump_class_info(&classInfo);
-        return true;
-    }
-    __except (SehDiagnostics::handle("world.class_info"))
-    {
-        return false;
-    }
-}
-
 static bool isSkyEntity(C_BaseEntity* entity)
 {
-    SchemaClassInfoData_t* classInfo = nullptr;
-    if (!getClassInfoSafe(entity, classInfo))
-        return false;
-
-    return classInfo && classInfo->szName &&
-        hash_32_fnv1a_const(classInfo->szName) == hash_32_fnv1a_const("C_EnvSky");
+    const char* name = entity ? entity->designerName() : nullptr;
+    return name && hash_32_fnv1a_const(name) == hash_32_fnv1a_const("env_sky");
 }
 
 static bool prepareSkyboxColor(void* meshArray, int meshCount)
 {
-    if (!meshArray || meshCount <= 0 || meshCount > (1 << 20))
-        return false;
+	if (!Config::Night || !meshArray || meshCount <= 0 || meshCount > (1 << 20))
+		return false;
 
-    const auto meshBase = reinterpret_cast<std::uintptr_t>(meshArray);
-    std::uintptr_t descriptor = 0;
-    if (!readMemory(meshBase + (static_cast<std::uintptr_t>(meshCount) * 0x70u) - 0x58u, descriptor))
-        return false;
-    if (descriptor < 0x10000u || descriptor > 0x00007FFFFFFFFFFFull)
-        return false;
+	const auto meshBase = reinterpret_cast<std::uintptr_t>(meshArray);
+	std::uintptr_t descriptor = 0;
+	if (!readMemory(meshBase + (static_cast<std::uintptr_t>(meshCount) * 0x70u) - 0x58u, descriptor) ||
+		descriptor < 0x10000u || descriptor > 0x00007FFFFFFFFFFFull)
+		return false;
 
-    activeSkyboxColorAddress = descriptor + 0xE8u;
-    if (!readMemory(activeSkyboxColorAddress + 0x0u, activeSkyboxOriginalColor[0]) ||
-        !readMemory(activeSkyboxColorAddress + 0x4u, activeSkyboxOriginalColor[1]) ||
-        !readMemory(activeSkyboxColorAddress + 0x8u, activeSkyboxOriginalColor[2]))
-    {
-        activeSkyboxColorAddress = 0;
-        return false;
-    }
+	activeSkyboxColorAddress = descriptor + 0xE8u;
+	if (!readMemory(activeSkyboxColorAddress + 0x0u, activeSkyboxOriginalColor[0]) ||
+		!readMemory(activeSkyboxColorAddress + 0x4u, activeSkyboxOriginalColor[1]) ||
+		!readMemory(activeSkyboxColorAddress + 0x8u, activeSkyboxOriginalColor[2]))
+	{
+		activeSkyboxColorAddress = 0;
+		return false;
+	}
 
-    const float nightColor[3] = {
-        12.0f / 255.0f,
-        24.0f / 255.0f,
-        55.0f / 255.0f
-    };
-    if (!writeMemory(activeSkyboxColorAddress + 0x0u, nightColor[0]) ||
-        !writeMemory(activeSkyboxColorAddress + 0x4u, nightColor[1]) ||
-        !writeMemory(activeSkyboxColorAddress + 0x8u, nightColor[2]))
-    {
-        activeSkyboxColorAddress = 0;
-        return false;
-    }
-
-    return true;
+	const float skyBrightness = std::clamp(
+		(std::max)((std::max)(activeSkyboxOriginalColor[0], activeSkyboxOriginalColor[1]), activeSkyboxOriginalColor[2]),
+		0.0f, 1.0f);
+	if (!writeMemory(activeSkyboxColorAddress + 0x0u, skyBrightness * Config::NightColor.x) ||
+		!writeMemory(activeSkyboxColorAddress + 0x4u, skyBrightness * Config::NightColor.y) ||
+		!writeMemory(activeSkyboxColorAddress + 0x8u, skyBrightness * Config::NightColor.z))
+	{
+		writeMemory(activeSkyboxColorAddress + 0x0u, activeSkyboxOriginalColor[0]);
+		writeMemory(activeSkyboxColorAddress + 0x4u, activeSkyboxOriginalColor[1]);
+		writeMemory(activeSkyboxColorAddress + 0x8u, activeSkyboxOriginalColor[2]);
+		activeSkyboxColorAddress = 0;
+		return false;
+	}
+	return true;
 }
 
 static void restoreSkyboxColor()
@@ -274,21 +303,14 @@ static void restoreSkyboxColor()
 
 static void applyNightLightColor(void* object)
 {
-	if (!Config::Night || !object)
-		return;
-
-	const auto address = reinterpret_cast<std::uintptr_t>(object);
-	writeMemory(address + 0xE4u, Config::NightColor.x);
-	writeMemory(address + 0xE8u, Config::NightColor.y);
-	writeMemory(address + 0xECu, Config::NightColor.z);
+	// Preserve the game's per-light color; Night tint is applied to mesh colors.
+	(void)object;
 }
 
-static void applyNightPrimitiveColor(void* batch, int batchCount)
+void H::applyNightPrimitiveColor(void* batch, int batchCount)
 {
 	if (!Config::Night || !batch || batchCount <= 0 || batchCount > (1 << 20))
 		return;
-
-	const C_ByteColor4 configured = configuredNightColor();
 
 	const auto base = reinterpret_cast<std::uintptr_t>(batch);
 	std::uintptr_t cachedMaterial = 0;
@@ -309,7 +331,9 @@ static void applyNightPrimitiveColor(void* batch, int batchCount)
 			continue;
 
 		const auto colorAddress = mesh + 0x50u;
-		writeSceneColor(colorAddress, configured);
+		C_ByteColor4 original{};
+		if (readSceneColor(colorAddress, original))
+			writeSceneColor(colorAddress, tintWorldColor(original));
 	}
 }
 
@@ -319,8 +343,9 @@ std::uintptr_t __fastcall H::hkUpdateLightObject(void* a1, void* a2, void* a3)
 	if (!original)
 		return 0;
 
+	const auto result = original(a1, a2, a3);
 	applyNightLightColor(a2);
-	return original(a1, a2, a3);
+	return result;
 }
 
 std::uintptr_t __fastcall H::hkDrawSceneObject(void* a1, void* a2, void* batch,
@@ -330,7 +355,7 @@ std::uintptr_t __fastcall H::hkDrawSceneObject(void* a1, void* a2, void* batch,
 	if (!original)
 		return 0;
 
-	applyNightPrimitiveColor(batch, batchCount);
+	H::applyNightPrimitiveColor(batch, batchCount);
 	return original(a1, a2, batch, batchCount, a5, a6, a7, a8);
 }
 
@@ -423,8 +448,12 @@ void H::updateSmoke()
     for (int i = 1; i <= highest; ++i)
     {
         auto* entity = I::GameEntity->Instance->Get(i);
+        if (!entity)
+            continue;
+
         SchemaClassInfoData_t* classInfo = nullptr;
-        if (!getClassInfoSafe(entity, classInfo) || !classInfo || !classInfo->szName)
+        entity->dump_class_info(&classInfo);
+        if (!classInfo || !classInfo->szName)
             continue;
 
         const auto hash = hash_32_fnv1a_const(classInfo->szName);

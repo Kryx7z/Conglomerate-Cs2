@@ -15,9 +15,9 @@ public:
 
 class C_CSPlayerPawn : public C_BaseEntity {
 public:
-	SCHEMA_ADD_OFFSET(Vector_t, m_vOldOrigin, 0x13B8);
-	SCHEMA_ADD_OFFSET(Vector_t, m_vecViewOffset, 0xE78);
-	SCHEMA_ADD_OFFSET(CCSPlayer_WeaponServices*, m_pWeaponServices, 0x1208);
+	SCHEMA_ADD_OFFSET(Vector_t, m_vOldOrigin, 0x14A4);
+	SCHEMA_ADD_OFFSET(Vector_t, m_vecViewOffset, 0xF60);
+	SCHEMA_ADD_OFFSET(CCSPlayer_WeaponServices*, m_pWeaponServices, 0x12F0);
 	schema(bool, m_bIsScoped, "C_CSPlayerPawn->m_bIsScoped");
 	schema(float, m_flFlashDuration, "C_CSPlayerPawnBase->m_flFlashDuration");
 	schema(void*, m_pGameSceneNode, "C_BaseEntity->m_pGameSceneNode");

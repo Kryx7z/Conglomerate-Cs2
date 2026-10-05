@@ -210,7 +210,7 @@ using fnSetTypeKV3 =
 static const char* const kSetTypeKV3Patterns[] =
 {
     "40 53 48 83 EC ? 80 FA ? 0F B6 C2 41 B9 ? ? ? ? 48 8B D9 44 0F 45 C8",
-    "40 53 48 83 EC 30 80 FA 06 0F B6 C2 41 B9 16 00 00 00 48 8B D9 44 0F 45 C8",
+    "40 53 48 83 EC ? 80 FA",
     "40 53 48 83 EC ? 80 FA",
 };
 

@@ -1,4 +1,5 @@
 #include "schema.h"
+#include "../debug_console.h"
 #include <string>
 #include <unordered_map>
 #include <Shlobj.h>
@@ -99,13 +100,19 @@ bool Schema::init(const char* ModuleName, int module_type)
 {
 	schema_system = I::Get<ISchemaSystem>("schemasystem.dll", "SchemaSystem_001");
 	if (!schema_system)
+	{
+		DebugConsole::logf("[schema] SchemaSystem_001 was not found");
 		return false;
+	}
 
 	g_schema_system = schema_system;
 
 	default_scope = schema_system->FindTypeScopeForModule(ModuleName);
 	if (default_scope == nullptr)
+	{
+		DebugConsole::logf("[schema] no type scope for module %s", ModuleName ? ModuleName : "(null)");
 		return false;
+	}
 
 	type_scopes[ModuleName] = default_scope;
 
@@ -130,6 +137,8 @@ std::uint32_t SchemaFinder::Get(const char* fullPath)
 	const std::uint32_t offset = ResolveField(default_scope, className, fieldName);
 
 	resolved_offsets[hashedName] = offset;
+	if (offset == 0U)
+		DebugConsole::rateLimited(fullPath, "[schema] field was not resolved: %s", fullPath);
 	return offset;
 }
 
@@ -145,5 +154,7 @@ std::uint32_t SchemaFinder::GetExternal(const char* moduleName, const char* clas
 	const std::uint32_t offset = ResolveField(pScope, className, fieldName);
 
 	resolved_offsets[hashedName] = offset;
+	if (offset == 0U)
+		DebugConsole::rateLimited("schema.external.missing", "[schema] field was not resolved: %s", key.c_str());
 	return offset;
 }

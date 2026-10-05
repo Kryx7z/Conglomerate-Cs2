@@ -17,7 +17,8 @@ public:
 		pBaseFn = pFunction;
 		pReplaceFn = pDetour;
 
-		if (MH_CreateHook(pBaseFn, pReplaceFn, &pOriginalFn) != MH_OK)
+		lastStatus = MH_CreateHook(pBaseFn, pReplaceFn, &pOriginalFn);
+		if (lastStatus != MH_OK)
 		{
 			pOriginalFn = nullptr;
 			return false;
@@ -43,8 +44,10 @@ public:
 
 		if (const MH_STATUS status = MH_EnableHook(pBaseFn); status != MH_OK)
 		{
+			lastStatus = status;
 			return false;
 		}
+		lastStatus = MH_OK;
 
 		// switch hook state
 		bIsHooked = true;
@@ -97,6 +100,11 @@ public:
 		return bIsHooked;
 	}
 
+	inline MH_STATUS GetLastStatus() const
+	{
+		return lastStatus;
+	}
+
 private:
 	// current hook state
 	bool bIsHooked = false;
@@ -106,4 +114,5 @@ private:
 	void* pReplaceFn = nullptr;
 	// original function
 	void* pOriginalFn = nullptr;
+	MH_STATUS lastStatus = MH_OK;
 };

@@ -8,5 +8,5 @@ uintptr_t CCSPlayerController::getAddress() const {
 
 const char* CCSPlayerController::getName() const {
 	if (!address) return nullptr;
-	return reinterpret_cast<const char*>(address + 0x6F4); // CBasePlayerController->m_iszPlayerName
+	return reinterpret_cast<const char*>(address + 0x6FC); // CBasePlayerController->m_iszPlayerName
 }

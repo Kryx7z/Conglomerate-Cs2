@@ -36,7 +36,9 @@ namespace chams
 		bool init();
 	};
 
-	static ChamsEntity GetTargetType(C_BaseEntity* entity) noexcept;
+	static ChamsEntity GetTargetType(C_BaseEntity* entity, CBaseHandle sceneOwner = CBaseHandle()) noexcept;
+	void __fastcall generatePrimitivesHook(void* thisptr, void* sceneObject, void* sceneView, void* primitiveBuffer);
 	CStrongHandle<CMaterial2> create(const char* name, const char szVmatBuffer[]);
-	void __fastcall hook(void* pAnimatableSceneObjectDesc, void* pDx11, CMeshData* arrMeshDraw, int nDataCount, void* pSceneView, void* pSceneLayer, void* pUnk, void* pUnk2);
+	std::uintptr_t __fastcall hook(void* a1, void* a2, CMeshData* arrMeshDraw, int nDataCount,
+		int a5, void* a6, void* a7, void* a8);
 }

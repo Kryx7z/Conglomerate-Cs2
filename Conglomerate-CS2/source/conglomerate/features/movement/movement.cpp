@@ -19,7 +19,7 @@ namespace
 	GetViewAnglesFn resolveGetViewAngles()
 	{
 		static auto fn = reinterpret_cast<GetViewAnglesFn>(M::FindPattern(
-			"client", "4C 8B C1 85 D2 74 08 48 8D 05 ? ? ? ? C3"));
+			"client", "4C 8B C1 85 D2 74 ? 48 8D 05"));
 		return fn;
 	}
 

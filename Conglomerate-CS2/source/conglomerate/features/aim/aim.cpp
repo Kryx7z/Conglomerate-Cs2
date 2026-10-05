@@ -3,31 +3,29 @@
 #include "../../../conglomerate/interfaces/interfaces.h"
 #include "../../../conglomerate/hooks/hooks.h"
 #include "../../../conglomerate/config/config.h"
+#include "../../../conglomerate/utils/debug_console.h"
+#include "../../../conglomerate/utils/memory/patternscan/patternscan.h"
 
-#include <chrono>
-#include <Windows.h>
-
-
-static bool is_writable_address(const void* address)
+namespace
 {
-    MEMORY_BASIC_INFORMATION mbi{};
-    if (VirtualQuery(address, &mbi, sizeof(mbi)) != sizeof(mbi))
-        return false;
+    using GetViewAnglesFn = QAngle_t* (__fastcall*)(void*, int);
+    using SetViewAnglesFn = void (__fastcall*)(void*, int, QAngle_t*);
 
-    if (mbi.State != MEM_COMMIT)
-        return false;
-
-    switch (mbi.Protect & 0xFFu)
+    GetViewAnglesFn resolveGetViewAngles()
     {
-    case PAGE_READWRITE:
-    case PAGE_WRITECOPY:
-    case PAGE_EXECUTE_READWRITE:
-    case PAGE_EXECUTE_WRITECOPY:
-        return true;
-    default:
-        return false;
+        static auto fn = reinterpret_cast<GetViewAnglesFn>(M::FindPattern(
+            "client", "4C 8B C1 85 D2 74 ? 48 8D 05"));
+        return fn;
+    }
+
+    SetViewAnglesFn resolveSetViewAngles()
+    {
+        static auto fn = reinterpret_cast<SetViewAnglesFn>(M::FindPattern(
+            "client", "85 D2 75 ? 48 63 81"));
+        return fn;
     }
 }
+
 
 Vector_t GetEntityEyePos(const C_CSPlayerPawn* Entity) {
     if (!Entity)
@@ -72,40 +70,57 @@ inline float GetFov(const QAngle_t& viewAngle, const QAngle_t& aimAngle)
     return sqrtf(powf(delta.x, 2.0f) + powf(delta.y, 2.0f));
 }
 
-void Aimbot() {
+void Aimbot(void* input, int slot) {
     if (!Config::aimbot)
         return;
 
     if (!H::oGetLocalPlayer)
+	{
+		DebugConsole::rateLimited("aim.local_fn.missing", "[runtime] aim skipped: GetLocalPawn function pointer is null");
         return;
+	}
 
     if (!I::GameEntity || !I::GameEntity->Instance)
+	{
+		DebugConsole::rateLimited("aim.entity.invalid", "[runtime] aim skipped: entity system unavailable");
         return;
+	}
 
-    int nMaxHighestEntity = I::GameEntity->Instance->GetHighestEntityIndex();
+    constexpr int nMaxHighestEntity = 64;
 
     C_CSPlayerPawn* lp = H::oGetLocalPlayer(0);
     if (!lp)
+	{
+		DebugConsole::rateLimited("aim.local.null", "[runtime] aim skipped: GetLocalPawn returned null");
         return;
+	}
 
     Vector_t lep = GetEntityEyePos(lp);
 
-    // Hard-coded RVA. If the module handle is missing (0) or the offset has
-    // moved, this pointer lands in unrelated memory and writing it every frame
-    // would corrupt the game, so verify the page is committed and writable.
-    const uintptr_t clientBase = modules.getModule("client");
-    if (clientBase == 0)
-        return;
-
-    QAngle_t* viewangles = reinterpret_cast<QAngle_t*>(clientBase + 0x23E2C98); // dwViewAngles - build 14181
-    if (!is_writable_address(viewangles))
+    void* activeInput = I::Input ? I::Input : input;
+    const auto getViewAngles = resolveGetViewAngles();
+    const auto setViewAngles = resolveSetViewAngles();
+    if (!activeInput || !getViewAngles || !setViewAngles)
     {
+        DebugConsole::rateLimited("aim.viewangles.functions_missing",
+            "[runtime] aim skipped: input or view-angle accessor/setter is unavailable");
+        return;
+    }
+
+    QAngle_t* viewangles = getViewAngles(activeInput, slot);
+    if (!viewangles)
+    {
+        DebugConsole::rateLimited("aim.viewangles.invalid", "[runtime] aim skipped: GetViewAngles returned null");
         return;
     }
 
     C_CSPlayerPawn* best_pawn = nullptr;
     float best_fov = Config::aimbot_fov;
     QAngle_t best_angle{};
+    int controllers = 0;
+    int validPawnHandles = 0;
+    int resolvedPawns = 0;
+    int alivePawns = 0;
 
     if (Config::aimbot)
     for (int i = 1; i <= nMaxHighestEntity; i++) {
@@ -116,34 +131,31 @@ void Aimbot() {
         if (!Entity->handle().valid())
             continue;
 
-        SchemaClassInfoData_t* _class = nullptr;
-        Entity->dump_class_info(&_class);
-        if (!_class || !_class->szName)
+        if (!Entity->IsPlayerController())
             continue;
-
-        const uint32_t hash = HASH(_class->szName);
-        if (hash != HASH("CCSPlayerController"))
-            continue;
+        ++controllers;
 
         CCSPlayerController* Controller = reinterpret_cast<CCSPlayerController*>(Entity);
-        if (!Controller->m_hPawn().valid() || Controller->IsLocalPlayer())
+        if (!Controller->m_hPlayerPawn().valid())
+            continue;
+        ++validPawnHandles;
+        if (Controller->IsLocalPlayer())
             continue;
 
-        C_CSPlayerPawn* pawn = I::GameEntity->Instance->Get<C_CSPlayerPawn>(Controller->m_hPawn().index());
+        C_CSPlayerPawn* pawn = I::GameEntity->Instance->Get<C_CSPlayerPawn>(Controller->m_hPlayerPawn().index());
         if (!pawn)
             continue;
+        ++resolvedPawns;
 
         if (pawn->getHealth() < 1)
             continue;
+        ++alivePawns;
 
         if (Config::team_check && pawn->getTeam() == lp->getTeam())
             continue;
 
         Vector_t eye_pos = GetEntityEyePos(pawn);
-        QAngle_t angle = CalcAngles(eye_pos, lep);
-
-        angle.x *= -1.f;
-        angle.y += 180.f;
+        QAngle_t angle = CalcAngles(lep, eye_pos);
 
         const float fov = GetFov(*viewangles, angle);
         if (!std::isfinite(fov) || fov > best_fov)
@@ -155,8 +167,20 @@ void Aimbot() {
     }
 
     if (best_pawn) {
+        DebugConsole::once("aim.target.found", "[runtime] aim found a target; FOV=%.2f", best_fov);
         best_angle.z = 0.f;
         best_angle = best_angle.Normalize();
-        *viewangles = best_angle;
+        setViewAngles(activeInput, slot, &best_angle);
+        const QAngle_t* applied = getViewAngles(activeInput, slot);
+        DebugConsole::rateLimited("aim.angle.applied",
+            "[runtime] aim set view angle: requested=(%.2f, %.2f) current=(%.2f, %.2f) target=%p",
+            best_angle.x, best_angle.y,
+            applied ? applied->x : 0.0f, applied ? applied->y : 0.0f, best_pawn);
     }
+	else
+	{
+		DebugConsole::rateLimited("aim.target.none",
+			"[runtime] aim found no target: fov_limit=%.2f controllers=%d valid_handles=%d resolved_pawns=%d alive=%d",
+			best_fov, controllers, validPawnHandles, resolvedPawns, alivePawns);
+	}
 }

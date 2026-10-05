@@ -49,6 +49,16 @@ public:
 		return M::vfunc<void, 46U>(this, pReturn);
 	}
 
+	[[nodiscard]] const char* designerName()
+	{
+		CEntityIdentity* identity = m_pEntityIdentity();
+		static const std::uint32_t offset = SchemaFinder::Get("CEntityIdentity->m_designerName");
+		if (!identity || !offset)
+			return nullptr;
+
+		return *reinterpret_cast<const char**>(reinterpret_cast<std::uintptr_t>(identity) + offset);
+	}
+
 
 	[[nodiscard]] std::uint32_t get_entity_by_handle()
 	{
