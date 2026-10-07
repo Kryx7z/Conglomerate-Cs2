@@ -34,7 +34,7 @@
 
 ## Showcase
 <p align="center">
-    <img src="images/image.webp">
+    <img src="images/image.png">
   </a>
 </p> 
 
