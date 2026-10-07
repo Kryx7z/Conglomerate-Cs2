@@ -94,6 +94,7 @@
       <Optimization>Disabled</Optimization>
       <SDLCheck>true</SDLCheck>
       <ConformanceMode>true</ConformanceMode>
+      <PreprocessorDefinitions>CONGLOMERATE_DEBUG_CONSOLE=1;%(PreprocessorDefinitions)</PreprocessorDefinitions>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
@@ -107,8 +108,10 @@
       <FunctionLevelLinking>true</FunctionLevelLinking>
       <IntrinsicFunctions>true</IntrinsicFunctions>
       <RuntimeLibrary>MultiThreadedDLL</RuntimeLibrary>
+      <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
       <SDLCheck>true</SDLCheck>
       <ConformanceMode>true</ConformanceMode>
+      <PreprocessorDefinitions>CONGLOMERATE_DEBUG_CONSOLE=1;CONGLOMERATE_DEBUG_SAFE_MEMORY=1;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <LanguageStandard>stdcpplatest</LanguageStandard>
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
       <LanguageStandard_C>stdc17</LanguageStandard_C>
@@ -117,6 +120,7 @@
       <SubSystem>Windows</SubSystem>
       <EnableCOMDATFolding>true</EnableCOMDATFolding>
       <OptimizeReferences>true</OptimizeReferences>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
       <AdditionalDependencies>d3d11.lib;dxgi.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>
@@ -179,6 +183,7 @@
     <ClCompile Include="source\conglomerate\features\visuals\antiflash\antiflash.cpp" />
     <ClCompile Include="source\conglomerate\features\visuals\fov\fov.cpp" />
     <ClCompile Include="source\conglomerate\features\movement\movement.cpp" />
+    <ClCompile Include="source\conglomerate\menu\menu_input_lock.cpp" />
     <ClCompile Include="source\conglomerate\features\spectatorlist\spectatorlist.cpp" />
     <ClCompile Include="source\conglomerate\interfaces\CGameEntitySystem\CGameEntitySystem.cpp" />
     <ClCompile Include="source\conglomerate\interfaces\interfaces.cpp" />
@@ -205,6 +210,7 @@
   </ItemGroup>
   <ItemGroup>
     <ResourceCompile Include="external\kiero\minhook\dll_resources\MinHook.rc" />
+    <ResourceCompile Include="preview_model.rc" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="external\imgui\imconfig.h" />
@@ -232,6 +238,7 @@
     <ClInclude Include="source\conglomerate\features\aim\aim.h" />
     <ClInclude Include="source\conglomerate\features\chams\chams.h" />
     <ClInclude Include="source\conglomerate\features\movement\movement.h" />
+    <ClInclude Include="source\conglomerate\menu\menu_input_lock.h" />
     <ClInclude Include="source\conglomerate\features\spectatorlist\spectatorlist.h" />
     <ClInclude Include="source\conglomerate\interfaces\CGameEntitySystem\CGameEntitySystem.h" />
     <ClInclude Include="source\conglomerate\interfaces\IEngineClient\IEngineClient.h" />
@@ -243,6 +250,7 @@
     <ClInclude Include="source\conglomerate\keybinds\keybinds.h" />
     <ClInclude Include="source\conglomerate\menu\hud.h" />
     <ClInclude Include="source\conglomerate\offsets\offsets.h" />
+    <ClInclude Include="source\conglomerate\offsets\buttons.hpp" />
     <ClInclude Include="source\conglomerate\renderer\icons.h" />
     <ClInclude Include="source\conglomerate\utils\fnv1a\fnv1a.h" />
     <ClInclude Include="source\conglomerate\utils\math\math.h" />

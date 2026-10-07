@@ -5,6 +5,8 @@
 #include <cstdint>
 #include "../debug_console.h"
 
+// ong this is some bullshit
+
 namespace SehDiagnostics
 {
     inline int handle(const char* context, EXCEPTION_POINTERS* exceptionInfo = nullptr) noexcept

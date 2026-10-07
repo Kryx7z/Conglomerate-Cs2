@@ -16,6 +16,7 @@
 #include "../interfaces/interfaces.h"
 #include "../features/aim/aim.h"
 #include "../features/movement/movement.h"
+#include "../menu/menu_input_lock.h"
 #include "../menu/menu.h"
 #include "../utils/memory/seh_diagnostics.h"
 #include "../utils/debug_console.h"
@@ -78,14 +79,14 @@ static bool ReadMemorySafe(std::uintptr_t address, void* output, std::size_t siz
 
 static void SuppressInputSafe(void* input)
 {
-	Movement::suppressInput(input);
+	MenuInputLock::suppressInput(input);
 }
 
 static void PrepareInputSafe(void* input, bool menuOpen)
 {
-	Movement::setInputBlocked(input, menuOpen);
+	MenuInputLock::setBlocked(input, menuOpen);
 	if (menuOpen)
-		Movement::suppressInput(input);
+		MenuInputLock::suppressInput(input);
 }
 
 using CreateMoveFn = void(__fastcall*)(void*, unsigned int, std::int64_t);
@@ -154,6 +155,18 @@ static void CallAimbotSafe(void* input, unsigned int slot)
 	}
 	__except (SehDiagnostics::handle("hook.create_move.aimbot"))
 	{
+	}
+}
+
+static void CallTriggerBotSafe(void* input, unsigned int slot, bool allowed)
+{
+	__try
+	{
+		TriggerBot(input, static_cast<int>(slot), allowed);
+	}
+	__except (SehDiagnostics::handle("hook.create_move.triggerbot"))
+	{
+		ReleaseTriggerBot();
 	}
 }
 
@@ -235,11 +248,17 @@ void __fastcall H::hkCreateMove(void* input, unsigned int slot, std::int64_t act
 	const bool menuOpen = UiState::menuOpen;
 
 	PrepareInputSafe(input, menuOpen);
+	if (!menuOpen && Config::bunnyHop && oGetLocalPlayer)
+		Movement::applyBunnyHopInput(oGetLocalPlayer(0));
+	// Trigger input must be written before the original CreateMove builds this tick's command.
+	// Writing the button after the original callback loses the press before it reaches the command.
+	CallTriggerBotSafe(input, slot, !menuOpen);
 
 	if (original)
 	{
 		if (!CallCreateMoveSafe(original, input, slot, active))
 		{
+			ReleaseTriggerBot();
 			return;
 		}
 	}
@@ -250,7 +269,6 @@ void __fastcall H::hkCreateMove(void* input, unsigned int slot, std::int64_t act
 		SuppressInputSafe(input);
 		return;
 	}
-
 	if (Config::aimbot)
 		DebugConsole::once("aim.dispatch", "[runtime] aim dispatch reached from CreateMove; enabled=1");
 	CallAimbotSafe(input, slot);
@@ -262,11 +280,11 @@ void __fastcall H::hkHandleViewAngles(void* input, int slot)
 	if (!original)
 		return;
 
-	const bool restore = UiState::menuOpen && Movement::captureViewAngles(input, slot);
+	const bool restore = UiState::menuOpen && MenuInputLock::captureViewAngles(input, slot);
 	original(input, slot);
 
 	if (restore)
-		Movement::restoreViewAngles();
+		MenuInputLock::restoreViewAngles();
 }
 
 void __fastcall H::hkRenderSmoke(void* a1, void* a2, int a3, int a4, void* a5, void* a6)

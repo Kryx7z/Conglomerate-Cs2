@@ -188,8 +188,6 @@ bool chams::Materials::init()
                 F_RENDER_BACKFACES = 0
 })");
 
-    // Used to return true unconditionally, so a failed creation produced chams
-    // that silently rendered nothing.
     const bool allCreated =
         resourceMaterials[FLAT].mat != nullptr &&
         resourceMaterials[FLAT].mat_invs != nullptr &&
@@ -210,8 +208,6 @@ static C_CSPlayerPawn* findPlayerPawn(C_BaseEntity* renderEntity, CBaseHandle sc
     if (!renderEntity || !I::GameEntity || !I::GameEntity->Instance)
         return nullptr;
 
-    // A scene owner may be the player controller rather than its pawn. Resolve
-    // that owner directly before comparing against the controller list.
     if (renderEntity->IsPlayerController())
     {
         auto* controller = reinterpret_cast<CCSPlayerController*>(renderEntity);
@@ -235,9 +231,6 @@ static C_CSPlayerPawn* findPlayerPawn(C_BaseEntity* renderEntity, CBaseHandle sc
         if (!pawnHandle.valid())
             continue;
 
-        // Scene-system owners are handles. Match the complete handle first,
-        // including its serial, rather than relying only on the entity pointer
-        // returned by the index lookup.
         if (sceneOwner.valid() && pawnHandle == sceneOwner)
         {
             C_CSPlayerPawn* pawn = I::GameEntity->Instance->Get<C_CSPlayerPawn>(pawnHandle);
@@ -268,9 +261,6 @@ static SceneOwnerKind getSceneOwnerKind(C_BaseEntity* entity, const char** class
     if (!entity)
         return SceneOwnerKind::UNKNOWN;
 
-    // Resolve the schema class through CEntityIdentity's current entity-class
-    // pointer. The dump_class_info vfunc returned null for live scene owners
-    // in the latest run, so it cannot be the classifier for this render path.
     std::uintptr_t identity = 0;
     std::uintptr_t entityClass = 0;
     std::uintptr_t classInfo = 0;
@@ -316,10 +306,6 @@ ChamsEntity chams::GetTargetType(C_BaseEntity* render_ent, CBaseHandle sceneOwne
         : findPlayerPawn(render_ent, sceneOwner);
     if (player)
     {
-        // Keep target selection on the same schema-resolved fields used by
-        // aim/ESP. The legacy hard-coded offsets can reject live pawns or
-        // read the wrong team, preventing the enabled chams branch from being
-        // selected on a newer build.
         const int health = player->getHealth();
         if (health <= 0)
         {
@@ -345,8 +331,6 @@ ChamsEntity chams::GetTargetType(C_BaseEntity* render_ent, CBaseHandle sceneOwne
 
 CMaterial2* GetMaterial(int type, bool invisible)
 {
-    // Config::chamsMaterial is round-tripped through the config json, so it can
-    // come back out of range. resourceMaterials only has MAXCOUNT entries.
     if (type < 0 || type >= ChamsType::MAXCOUNT)
         return nullptr;
 
@@ -443,8 +427,6 @@ static bool AppendChamsLayer(GeneratePrimitivesFn original, void* thisptr, void*
         SafeMemory::write(primitive + 0x28u, materialAddress);
         SafeMemory::write(primitive + 0x50u, replacement);
 
-        // The renderer may reorder translucent batches after GeneratePrimitives.
-        // Keep the depth-tested pass last so it replaces ignore-Z color on visible pixels.
         if (drawLast)
         {
             std::uint16_t flags{};
@@ -605,8 +587,6 @@ static std::uintptr_t invokeChamsHookSafely(DrawArrayFn original, void* a1, void
     }
     __except (SehDiagnostics::handle("chams.hook", GetExceptionInformation()))
     {
-		// Preserve the game's scene draw if our classification/material path fails.
-		// Do not retry when the original draw itself was already entered.
 		if (!originalInvoked && original)
 			return original(a1, a2, pMeshScene, nMeshCount, a5, a6, a7, a8);
 		return 0;

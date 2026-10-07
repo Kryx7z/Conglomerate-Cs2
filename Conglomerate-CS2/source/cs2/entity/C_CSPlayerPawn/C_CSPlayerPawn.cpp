@@ -47,7 +47,9 @@ CCSPlayer_WeaponServices* C_CSPlayerPawn::GetWeaponServices() const {
 	if (!this || offset == 0U)
 		return nullptr;
 
-	return reinterpret_cast<CCSPlayer_WeaponServices*>(reinterpret_cast<uintptr_t>(this) + offset);
+	// m_pWeaponServices is a pointer member. Return its stored pointer, not the
+	// address of the member itself (which makes later weapon-handle reads bogus).
+	return *reinterpret_cast<CCSPlayer_WeaponServices**>(reinterpret_cast<uintptr_t>(this) + offset);
 }
 
 uintptr_t C_CSPlayerPawn::getAddress() const {

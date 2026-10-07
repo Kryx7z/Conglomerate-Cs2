@@ -392,9 +392,9 @@ void Visuals::esp() {
             };
 
             if (Player.scoped)
-                drawFlag("SCOPE", IM_COL32(80, 150, 255, 255));
+                drawFlag("SCOPED", IM_COL32(80, 150, 255, 255));
             if (Player.flashDuration > 0.0f && std::isfinite(Player.flashDuration))
-                drawFlag("BLIND", IM_COL32(255, 220, 60, 255));
+                drawFlag("FLASHED", IM_COL32(255, 220, 60, 255));
         }
 
         // Health Bar

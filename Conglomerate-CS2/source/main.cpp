@@ -9,6 +9,7 @@
 extern LRESULT ImGui_ImplWin32_WndProcHandler(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);
 
 Conglomerate conglomerate;
+HMODULE g_moduleInstance = nullptr;
 
 Present oPresent;
 HWND window = NULL;
@@ -145,7 +146,6 @@ HRESULT __stdcall hkPresent(IDXGISwapChain* pSwapChain, UINT SyncInterval, UINT 
     {
     }
 
-    // Always call esp() to allow individual components to be rendered
     __try
     {
         conglomerate.renderer.visuals.esp();
@@ -173,9 +173,6 @@ DWORD WINAPI MainThread(LPVOID lpReserved)
             if (kiero::init(kiero::RenderType::D3D11) == kiero::Status::Success)
             {
                 DebugConsole::once("kiero.init.ok", "[startup] kiero D3D11 initialization succeeded");
-                // kiero::bind reports failure through its return value. The old
-                // code set init_hook unconditionally, so a failed bind left the
-                // cheat never initialising and never retrying.
                 if (kiero::bind(8, (void**)&oPresent, hkPresent) == kiero::Status::Success)
                 {
                     init_hook = true;
@@ -193,16 +190,14 @@ DWORD WINAPI MainThread(LPVOID lpReserved)
             }
         }
 
-        // Otherwise this loop spins a core flat while it waits for F4.
+        // unhook with F4.
         Sleep(100);
     } while (!GetAsyncKeyState(VK_F4));
 
     if (oWndProc != nullptr)
     {
-        // restore wnd proc
         SetWindowLongPtrW(window, GWLP_WNDPROC, reinterpret_cast<LONG_PTR>(oWndProc));
 
-        // invalidate old wnd proc
         oWndProc = nullptr;
     }
 
@@ -225,6 +220,7 @@ BOOL WINAPI DllMain(HMODULE hMod, DWORD dwReason, LPVOID lpReserved)
     switch (dwReason)
     {
     case DLL_PROCESS_ATTACH:
+        g_moduleInstance = hMod;
         DisableThreadLibraryCalls(hMod);
         if (HANDLE worker = CreateThread(nullptr, 0, MainThread, hMod, 0, nullptr))
             CloseHandle(worker);

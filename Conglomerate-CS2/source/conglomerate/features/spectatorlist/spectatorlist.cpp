@@ -9,6 +9,24 @@
 #include "../../../cs2/entity/C_CSPlayerPawn/C_CSPlayerPawn.h"
 #include "../../utils/debug_console.h"
 
+#include <algorithm>
+#include <string>
+#include <vector>
+
+namespace
+{
+	const ImVec4 kSpectatorPurple(168.0f / 255.0f, 155.0f / 255.0f, 242.0f / 255.0f, 1.0f);
+	const ImVec4 kSpectatorBlack(5.0f / 255.0f, 5.0f / 255.0f, 5.0f / 255.0f, 0.88f);
+
+	void CenterText(const char* text)
+	{
+		const float textWidth = ImGui::CalcTextSize(text).x;
+		ImGui::SetCursorPosX((std::max)(ImGui::GetCursorPosX(),
+			(ImGui::GetWindowWidth() - textWidth) * 0.5f));
+		ImGui::TextUnformatted(text);
+	}
+}
+
 void SpectatorList::render()
 {
 	if (!Config::spectatorList)
@@ -64,17 +82,7 @@ void SpectatorList::render()
 		return;
 	}
 
-	ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0.11f, 0.11f, 0.13f, 0.7f));
-	ImGui::PushStyleColor(ImGuiCol_Border, ImVec4(0.30f, 0.30f, 0.30f, 0.7f));
-	ImGui::SetNextWindowSize(ImVec2(220.0f, 120.0f), ImGuiCond_FirstUseEver);
-	ImGui::SetNextWindowPos(ImVec2(ImGui::GetIO().DisplaySize.x - 240.0f, 100.0f), ImGuiCond_FirstUseEver);
-	ImGui::Begin("Spectator List", nullptr,
-		ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoResize |
-		ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoScrollbar);
-
-	ImGui::TextColored(ImVec4(0.7f, 0.7f, 1.0f, 1.0f), "SPECTATORS:");
-	int spectatorCount = 0;
-
+	std::vector<std::string> spectatorNames;
 	for (int i = 1; i <= highestIndex; ++i)
 	{
 		C_BaseEntity* entity = I::GameEntity->Instance->Get(i);
@@ -98,14 +106,35 @@ void SpectatorList::render()
 			continue;
 
 		const char* name = controller->m_sSanitizedPlayerName();
-		ImGui::TextUnformatted(name && *name ? name : "unknown");
-		++spectatorCount;
+		spectatorNames.emplace_back(name && *name ? name : "unknown");
 	}
 
-	if (spectatorCount == 0)
-		ImGui::TextDisabled("Nobody");
-	DebugConsole::once("spectators.rendered", "[runtime] spectator list rendered; spectator count=%d", spectatorCount);
+	const float displayHeight = ImGui::GetIO().DisplaySize.y;
+	const float desiredHeight = 76.0f + static_cast<float>((std::max<std::size_t>)(spectatorNames.size(), 1)) * 22.0f;
+	const float windowHeight = (std::min)(desiredHeight, (std::max)(120.0f, displayHeight - 40.0f));
+	ImGui::PushStyleColor(ImGuiCol_WindowBg, kSpectatorBlack);
+	ImGui::PushStyleColor(ImGuiCol_Border, ImVec4(168.0f / 255.0f, 155.0f / 255.0f, 242.0f / 255.0f, 0.62f));
+	ImGui::PushStyleColor(ImGuiCol_Text, kSpectatorPurple);
+	ImGui::PushStyleColor(ImGuiCol_Separator, ImVec4(0.30f, 0.27f, 0.45f, 1.0f));
+	ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 12.0f);
+	ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(12.0f, 9.0f));
+	ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(7.0f, 5.0f));
+	ImGui::SetNextWindowSize(ImVec2(235.0f, windowHeight), ImGuiCond_Always);
+	ImGui::SetNextWindowPos(ImVec2(ImGui::GetIO().DisplaySize.x - 245.0f, 100.0f), ImGuiCond_FirstUseEver);
+	ImGui::Begin("Spectators", nullptr,
+		ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoResize |
+		ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoScrollbar);
+
+	CenterText("Spectators");
+	ImGui::Separator();
+	for (const auto& name : spectatorNames)
+		CenterText(name.c_str());
+	if (spectatorNames.empty())
+		CenterText("Nobody");
+	DebugConsole::once("spectators.rendered", "[runtime] spectator list rendered; spectator count=%d",
+		static_cast<int>(spectatorNames.size()));
 
 	ImGui::End();
-	ImGui::PopStyleColor(2);
+	ImGui::PopStyleVar(3);
+	ImGui::PopStyleColor(4);
 }

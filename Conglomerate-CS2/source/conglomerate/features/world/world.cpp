@@ -46,7 +46,6 @@ namespace
 
     static C_ByteColor4 tintWorldColor(const C_ByteColor4& original)
     {
-        // Keep primitive and sky-object tinting shaded while aggregate walls use Velo's direct color pass.
         constexpr float redWeight = 0.2126f;
         constexpr float greenWeight = 0.7152f;
         constexpr float blueWeight = 0.0722f;
@@ -89,7 +88,6 @@ namespace
 		if (!readMemory(objectArray + 0x8u, objectData) || !objectData)
 			return false;
 
-		// Velo confirms +0x30 is the source index pointer and +0x38 is the output record index.
 		if (!readMemory(objectData + 0x4u, count) ||
 			!readMemory(objectData + 0x38u, startIndex))
 			return false;
@@ -224,8 +222,6 @@ void __fastcall H::hkUpdateSceneObject(void* a1, void* a2, c_aggregate_object_ar
 	if (!original)
 		return;
 
-	// Always call the real game function first and keep its result. This
-	// must never be skipped or lost, or the game itself could misbehave.
 	original(a1, a2, a3);
 	applyNightModeColoring(a3);
 }
@@ -303,7 +299,6 @@ static void restoreSkyboxColor()
 
 static void applyNightLightColor(void* object)
 {
-	// Preserve the game's per-light color; Night tint is applied to mesh colors.
 	(void)object;
 }
 

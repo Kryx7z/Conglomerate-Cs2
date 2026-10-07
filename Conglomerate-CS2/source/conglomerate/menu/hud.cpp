@@ -24,11 +24,9 @@ float CalculateFovRadius(float fovDegrees, float screenWidth, float screenHeight
 }
 
 void RenderFovCircle(ImDrawList* drawList, float fov, ImVec2 screenCenter, float screenWidth, float screenHeight, float thickness) {
-    constexpr float kBaselineGameFov = 90.0f; // fixed reference so the circle doesn't resize when the player's own FOV slider changes
+    constexpr float kBaselineGameFov = 90.0f; 
     float radius = CalculateFovRadius(fov, screenWidth, screenHeight, kBaselineGameFov);
 
-    // A zero/negative/NaN radius (slider at 0, degenerate display size) would
-    // push garbage vertices into the draw list.
     if (!std::isfinite(radius) || radius <= 0.0f)
         return;
 
@@ -63,15 +61,12 @@ void Hud::render() {
 		ImVec2 pos = ImVec2(10, 10);
 		ImVec2 rectSize = ImVec2(textSize.x + padding * 2, textSize.y + padding * 2);
 
-		ImU32 bgColor = IM_COL32(50, 50, 50, 200);
-		ImU32 borderColor = IM_COL32(153, 76, 204, 255);
-		ImU32 textColor = IM_COL32(255, 255, 255, 255);
+		ImU32 bgColor = IM_COL32(5, 5, 5, 225);
+		ImU32 borderColor = IM_COL32(168, 155, 242, 240);
+		ImU32 textColor = IM_COL32(168, 155, 242, 255);
 
-		drawList->AddRectFilled(pos, ImVec2(pos.x + rectSize.x, pos.y + rectSize.y), bgColor);
-
-		float lineThickness = 2.0f;
-		drawList->AddLine(pos, ImVec2(pos.x, pos.y + rectSize.y), borderColor, lineThickness);
-		drawList->AddLine(ImVec2(pos.x + rectSize.x, pos.y), ImVec2(pos.x + rectSize.x, pos.y + rectSize.y), borderColor, lineThickness);
+		drawList->AddRectFilled(pos, ImVec2(pos.x + rectSize.x, pos.y + rectSize.y), bgColor, 6.0f);
+		drawList->AddRect(pos, ImVec2(pos.x + rectSize.x, pos.y + rectSize.y), borderColor, 6.0f, 0, 1.2f);
 
 		ImVec2 textPos = ImVec2(pos.x + padding, pos.y + padding);
 		drawList->AddText(textPos, textColor, watermarkText.c_str());

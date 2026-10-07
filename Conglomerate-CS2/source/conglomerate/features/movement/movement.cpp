@@ -3,148 +3,72 @@
 #include <Windows.h>
 #include <cstdint>
 
-#include "../../interfaces/interfaces.h"
-#include "../../utils/memory/patternscan/patternscan.h"
 #include "../../utils/memory/safe_memory.h"
+#include "../../utils/memory/seh_diagnostics.h"
+#include "../../utils/schema/schema.h"
+#include "../../offsets/buttons.hpp"
+#include "../../utils/debug_console.h"
+#include "../../config/config.h"
 
 namespace
 {
-	using GetViewAnglesFn = QAngle_t*(__fastcall*)(void*, int);
-	using SetViewAnglesFn = void(__fastcall*)(void*, int, QAngle_t*);
-	QAngle_t* g_capturedViewAngles = nullptr;
-	void* g_capturedInput = nullptr;
-	int g_capturedSlot = 0;
-	QAngle_t g_savedViewAngles{};
-
-	GetViewAnglesFn resolveGetViewAngles()
-	{
-		static auto fn = reinterpret_cast<GetViewAnglesFn>(M::FindPattern(
-			"client", "4C 8B C1 85 D2 74 ? 48 8D 05"));
-		return fn;
-	}
-
-	SetViewAnglesFn resolveSetViewAngles()
-	{
-		static auto fn = reinterpret_cast<SetViewAnglesFn>(M::FindPattern(
-			"client", "85 D2 75 ? 48 63 81"));
-		return fn;
-	}
-
-	bool captureViewAnglesSafe(void* input, int slot)
-	{
-		// A failed capture must not leave state from a previous call behind.
-		g_capturedViewAngles = nullptr;
-		g_capturedInput = nullptr;
-		g_capturedSlot = 0;
-
-		void* activeInput = I::Input ? I::Input : input;
-		if (!activeInput)
-			return false;
-
-		__try
-		{
-			const auto fn = resolveGetViewAngles();
-			g_capturedViewAngles = fn ? fn(activeInput, slot) : nullptr;
-			if (!g_capturedViewAngles)
-				return false;
-
-			g_savedViewAngles = *g_capturedViewAngles;
-			g_capturedInput = activeInput;
-			g_capturedSlot = slot;
-			return true;
-		}
-        __except (SehDiagnostics::handle("movement.capture_view_angles"))
-		{
-			g_capturedViewAngles = nullptr;
-			g_capturedInput = nullptr;
-			g_capturedSlot = 0;
-			return false;
-		}
-	}
-
-	void restoreViewAnglesSafe()
+	bool resolveBunnyHopOffsets(std::uint32_t& flagsOffset, std::uint32_t& moveTypeOffset)
 	{
 		__try
 		{
-			const auto setter = resolveSetViewAngles();
-			if (setter && g_capturedInput)
-				setter(g_capturedInput, g_capturedSlot, &g_savedViewAngles);
-
-			if (g_capturedViewAngles)
-				*g_capturedViewAngles = g_savedViewAngles;
+			flagsOffset = SchemaFinder::Get("C_BaseEntity->m_fFlags");
+			moveTypeOffset = SchemaFinder::Get("C_BaseEntity->m_nActualMoveType");
+			return flagsOffset != 0 && moveTypeOffset != 0;
 		}
-		__except (SehDiagnostics::handle("movement.restore_view_angles"))
+		__except (SehDiagnostics::handle("movement.bunny_hop.schema_offsets"))
 		{
+			flagsOffset = 0;
+			moveTypeOffset = 0;
+			return false;
 		}
-		g_capturedViewAngles = nullptr;
-		g_capturedInput = nullptr;
-		g_capturedSlot = 0;
 	}
 }
 
-void Movement::suppressInput(void* input)
+void Movement::applyBunnyHopInput(void* localPawn)
 {
-    if (!input)
-        return;
+	if (!Config::bunnyHop || !localPawn)
+		return;
 
-    constexpr std::uint64_t blockedButtons = (1ULL << 0) | (1ULL << 1) |
-        (1ULL << 2) | (1ULL << 5) | (1ULL << 11) | (1ULL << 13);
+	std::uint32_t flagsOffset = 0;
+	std::uint32_t moveTypeOffset = 0;
+	if (!resolveBunnyHopOffsets(flagsOffset, moveTypeOffset))
+		return;
 
-    const auto base = reinterpret_cast<std::uintptr_t>(input);
-    const auto clearButtons = [&](std::uintptr_t address)
-    {
-        std::uint64_t buttons = 0;
-        if (!SafeMemory::read(address, buttons))
-            return;
+	const auto pawn = reinterpret_cast<std::uintptr_t>(localPawn);
+	std::uint32_t flags = 0;
+	std::uint8_t moveType = 0;
+	if (!SafeMemory::read(pawn + flagsOffset, flags) ||
+		!SafeMemory::read(pawn + moveTypeOffset, moveType))
+		return;
 
-        SafeMemory::write(address, buttons & ~blockedButtons);
-    };
+	if (moveType == 9 || moveType == 7)
+		return;
 
-    const auto clearValue = [&](std::uintptr_t address, auto value)
-    {
-        SafeMemory::write(address, value);
-    };
+	const bool spaceHeld = (GetAsyncKeyState(VK_SPACE) & 0x8000) != 0;
+	const bool onGround = (flags & 1u) != 0;
+	constexpr std::uintptr_t jumpButtonOffset = cs2_dumper::buttons::jump;
+	constexpr std::int32_t jumpPressed = 65537;
+	constexpr std::int32_t jumpReleased = 256;
+	const auto clientBase = reinterpret_cast<std::uintptr_t>(GetModuleHandleA("client.dll"));
+	if (!clientBase)
+		return;
 
-    if (I::InputUsesLegacyLayout)
-    {
-        clearButtons(base + 0x7A0);
-        clearValue(base + 0x7A8, std::uint64_t{});
-        clearValue(base + 0x7B0, std::uint64_t{});
-        clearValue(base + 0x7B8, std::uint64_t{});
-        clearValue(base + 0x7C0, 0.0f);
-        clearValue(base + 0x7C4, 0.0f);
-        clearValue(base + 0x7C8, 0.0f);
-        clearValue(base + 0x7CC, std::int32_t{});
-        clearValue(base + 0x7D0, std::int32_t{});
-    }
-    else
-    {
-        clearButtons(base + 0x250);
-        clearValue(base + 0x258, std::uint64_t{});
-        clearValue(base + 0x260, std::uint64_t{});
-        clearValue(base + 0x268, std::uint64_t{});
-        clearValue(base + 0x270, 0.0f);
-        clearValue(base + 0x274, 0.0f);
-        clearValue(base + 0x278, 0.0f);
-        clearValue(base + 0x27C, std::int32_t{});
-        clearValue(base + 0x280, std::int32_t{});
-    }
-}
+	const auto jumpAddress = clientBase + jumpButtonOffset;
+	const std::int32_t state = (spaceHeld && onGround) ? jumpPressed : jumpReleased;
+	if (!SafeMemory::write(jumpAddress, state))
+		return;
 
-void Movement::setInputBlocked(void* input, bool blocked)
-{
-    if (!input || I::InputUsesLegacyLayout)
-        return;
-
-    SafeMemory::write(reinterpret_cast<std::uintptr_t>(input) + 0x228u, blocked);
-}
-
-bool Movement::captureViewAngles(void* input, int slot)
-{
-	return captureViewAnglesSafe(input, slot);
-}
-
-void Movement::restoreViewAngles()
-{
-	restoreViewAnglesSafe();
+	if (spaceHeld && onGround)
+		DebugConsole::once("movement.bhop.jump_pressed",
+			"[runtime] Bunny Hop wrote jump press to client.dll+0x%llX",
+			static_cast<unsigned long long>(jumpButtonOffset));
+	else
+		DebugConsole::once("movement.bhop.jump_released",
+			"[runtime] Bunny Hop wrote jump release to client.dll+0x%llX",
+			static_cast<unsigned long long>(jumpButtonOffset));
 }

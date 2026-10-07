@@ -128,6 +128,7 @@ namespace internal_config
             };
 
             j["Night"] = Config::Night;
+            j["bunnyHop"] = Config::bunnyHop;
             j["NightColor"] = {
                 Config::NightColor.x,
                 Config::NightColor.y,
@@ -155,6 +156,9 @@ namespace internal_config
             };
 
             j["aimbot"] = Config::aimbot;
+            j["triggerbot"] = Config::triggerbot;
+            j["trigger_delay"] = Config::trigger_delay;
+            j["trigger_hitchance"] = Config::trigger_hitchance;
             j["aimbot_fov"] = Config::aimbot_fov;
             j["aimbotKey"] = keybind.getKey(Config::aimbot);
             j["team_check"] = Config::team_check;
@@ -286,6 +290,7 @@ namespace internal_config
             }
 
             Config::Night = j.value("Night", false);
+            Config::bunnyHop = j.value("bunnyHop", false);
             if (j.contains("NightColor") && j["NightColor"].is_array() && j["NightColor"].size() == 4)
             {
                 const auto arr = j["NightColor"];
@@ -304,6 +309,9 @@ namespace internal_config
 
             Config::fov_circle = j.value("fov_circle", false);
             Config::aimbot = j.value("aimbot", false);
+            Config::triggerbot = j.value("triggerbot", false);
+            Config::trigger_delay = std::clamp(j.value("trigger_delay", 5), 0, 250);
+            Config::trigger_hitchance = std::clamp(j.value("trigger_hitchance", 80), 0, 100);
             Config::aimbot_fov = j.value("aimbot_fov", 0.f);
             Config::team_check = j.value("team_check", j.value("teamCheckAim", false));
 
