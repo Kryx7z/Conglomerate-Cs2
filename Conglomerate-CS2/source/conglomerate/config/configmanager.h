@@ -157,10 +157,10 @@ namespace internal_config
 
             j["aimbot"] = Config::aimbot;
             j["triggerbot"] = Config::triggerbot;
-            j["trigger_delay"] = Config::trigger_delay;
-            j["trigger_hitchance"] = Config::trigger_hitchance;
+            j["triggerbot_team_check"] = Config::triggerbot_team_check;
             j["aimbot_fov"] = Config::aimbot_fov;
             j["aimbotKey"] = keybind.getKey(Config::aimbot);
+            j["triggerbotKey"] = keybind.getKey(Config::triggerbot);
             j["team_check"] = Config::team_check;
             j["antiflash"] = Config::antiflash;
             j["noSmoke"] = Config::noSmoke;
@@ -310,15 +310,17 @@ namespace internal_config
             Config::fov_circle = j.value("fov_circle", false);
             Config::aimbot = j.value("aimbot", false);
             Config::triggerbot = j.value("triggerbot", false);
-            Config::trigger_delay = std::clamp(j.value("trigger_delay", 5), 0, 250);
-            Config::trigger_hitchance = std::clamp(j.value("trigger_hitchance", 80), 0, 100);
             Config::aimbot_fov = j.value("aimbot_fov", 0.f);
             Config::team_check = j.value("team_check", j.value("teamCheckAim", false));
+            Config::triggerbot_team_check = j.value("triggerbot_team_check", Config::team_check);
 
             // VK_XBUTTON1 (mouse 4) remains the compatibility default for
             // older configs that predate keybind persistence.
             const int aimbotKey = j.value("aimbotKey", 5);
             keybind.setKey(Config::aimbot, aimbotKey);
+            // VK_MBUTTON is 4; use Mouse 3 when loading older configs without this field.
+            const int triggerbotKey = j.value("triggerbotKey", 4);
+            keybind.setKey(Config::triggerbot, triggerbotKey);
 
             Config::antiflash = j.value("antiflash", false);
             Config::noSmoke = j.value("noSmoke", false);

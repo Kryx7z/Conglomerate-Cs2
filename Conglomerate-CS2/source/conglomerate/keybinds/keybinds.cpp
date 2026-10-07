@@ -11,6 +11,7 @@ Keybind::Keybind(bool& v, int k)
 
 Keybinds::Keybinds() {
     keybinds.emplace_back(Keybind(Config::aimbot, VK_XBUTTON1));
+    keybinds.emplace_back(Keybind(Config::triggerbot, VK_MBUTTON));
 }
 
 void Keybinds::pollInputs() {

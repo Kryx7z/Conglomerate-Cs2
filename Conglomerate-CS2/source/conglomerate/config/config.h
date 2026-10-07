@@ -50,8 +50,7 @@ namespace Config {
 
 	extern bool aimbot;
 	extern bool triggerbot;
-	extern int trigger_delay;
-	extern int trigger_hitchance;
+	extern bool triggerbot_team_check;
 	extern float aimbot_fov;
 	extern bool team_check;
 	extern bool fov_circle;

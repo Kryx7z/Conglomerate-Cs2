@@ -248,8 +248,8 @@ void __fastcall H::hkCreateMove(void* input, unsigned int slot, std::int64_t act
 	const bool menuOpen = UiState::menuOpen;
 
 	PrepareInputSafe(input, menuOpen);
-	if (!menuOpen && Config::bunnyHop && oGetLocalPlayer)
-		Movement::applyBunnyHopInput(oGetLocalPlayer(0));
+	if (oGetLocalPlayer)
+		Movement::applyBunnyHopInput(!menuOpen && Config::bunnyHop ? oGetLocalPlayer(0) : nullptr);
 	// Trigger input must be written before the original CreateMove builds this tick's command.
 	// Writing the button after the original callback loses the press before it reaches the command.
 	CallTriggerBotSafe(input, slot, !menuOpen);

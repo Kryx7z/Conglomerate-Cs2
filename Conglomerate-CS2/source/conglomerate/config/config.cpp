@@ -53,8 +53,7 @@ namespace Config {
 
 	bool aimbot = 0;
 	bool triggerbot = false;
-	int trigger_delay = 5;
-	int trigger_hitchance = 80;
+	bool triggerbot_team_check = false;
 	float aimbot_fov = 0;
 	bool team_check = false;
 	bool fov_circle = 0;

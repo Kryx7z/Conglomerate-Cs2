@@ -813,10 +813,11 @@ void Menu::render()
         EndMenuPanel();
 
         ImGui::SameLine(0.0f, cardGap);
-        BeginMenuPanel("TriggerPanel", "Trigger", ImVec2(0.0f, 0.0f));
+        BeginMenuPanel("TriggerPanel", "Triggerbot", ImVec2(0.0f, 0.0f));
         MenuCheckbox("Enable##Trigger", &Config::triggerbot);
-        MenuSliderInt("Delay", &Config::trigger_delay, 0, 250, "%d ms");
-        MenuSliderInt("Hitchance", &Config::trigger_hitchance, 0, 100, "%d%%");
+        ImGui::TextUnformatted("Activation key");
+        keybind.menuButton(Config::triggerbot);
+        MenuCheckbox("Team Check##Triggerbot", &Config::triggerbot_team_check);
         EndMenuPanel();
         ImGui::EndChild();
         break;

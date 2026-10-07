@@ -11,10 +11,8 @@
 
 #include <Windows.h>
 #include <algorithm>
-#include <array>
 #include <cmath>
 #include <cstddef>
-#include <cstring>
 
 Vector_t GetEntityEyePos(const C_CSPlayerPawn* Entity);
 
@@ -171,7 +169,7 @@ namespace
     }
 
     bool TraceCrosshair(void* input, int slot, C_CSPlayerPawn* localPawn,
-        Vector_t& start, Vector_t& forward, Vector_t& right, Vector_t& up, std::uintptr_t& hitEntity)
+        Vector_t& start, Vector_t& forward, std::uintptr_t& hitEntity)
     {
         const auto getViewAngles = resolveGetViewAngles();
         void* activeInput = I::Input ? I::Input : input;
@@ -191,129 +189,10 @@ namespace
         const float yaw = angles->y * degreesToRadians;
         forward = Vector_t(std::cos(pitch) * std::cos(yaw),
             std::cos(pitch) * std::sin(yaw), -std::sin(pitch));
-        right = Vector_t(-std::sin(yaw), std::cos(yaw), 0.0f);
-        up = Vector_t(std::sin(pitch) * std::cos(yaw), std::sin(pitch) * std::sin(yaw), std::cos(pitch));
         return TraceDirection(localPawn, start, forward, hitEntity);
     }
 
-    bool TriggerHitchance(C_CSPlayerPawn* localPawn, const Vector_t& start,
-        const Vector_t& forward, const Vector_t& right, const Vector_t& up,
-        std::uintptr_t targetEntity, int minimumPercent, int& hitPercent)
-    {
-        hitPercent = 0;
-        if (minimumPercent <= 0)
-            return true;
-
-        auto* weapon = localPawn ? localPawn->GetActiveWeapon() : nullptr;
-        if (!weapon)
-            return false;
-
-        using GetSpreadFn = float(__fastcall*)(std::uintptr_t);
-        using GetInaccuracyFn = float(__fastcall*)(std::uintptr_t, float*, float*);
-        using UpdateAccuracyFn = void(__fastcall*)(std::uintptr_t);
-        using CalculateSpreadFn = void(__fastcall*)(std::int16_t, int, int, std::uint32_t,
-            float, float, float, float*, float*);
-        static const auto getSpread = reinterpret_cast<GetSpreadFn>(M::FindPattern("client",
-            "48 63 91 00 1A 00 00 48 8B 81 88 03 00 00 85 D2 78 ? 48 83 FA 02 73 ? F3 0F 10 84 90 50 07 00 00"));
-        static const auto getInaccuracy = reinterpret_cast<GetInaccuracyFn>(M::FindPattern("client",
-            "48 89 5C 24 ? 55 56 57 48 81 EC ? ? ? ? 44 0F 29 84 24"));
-        static const auto updateAccuracy = reinterpret_cast<UpdateAccuracyFn>(M::FindPattern("client",
-            "40 57 41 56 48 83 EC 68 48 8B F9 E8 ? ? ? ? 4C 8B F0 48 85 C0"));
-        static const auto calculateSpreadCall = M::FindPattern("client",
-            "28 F3 44 0F 11 44 24 20 E8 ? ? ? ? 48 8D 85 B0 00 00 00");
-        static const auto calculateSpread = calculateSpreadCall
-            ? reinterpret_cast<CalculateSpreadFn>(M::abs(calculateSpreadCall + 8, 1)) : nullptr;
-        if (!getSpread || !getInaccuracy || !updateAccuracy || !calculateSpread)
-        {
-            DebugConsole::rateLimited("trigger.hitchance.patterns",
-                "[runtime] Trigger hitchance unavailable: Weapon accuracy/spread functions were not found");
-            return false;
-        }
-
-        const auto weaponAddress = reinterpret_cast<std::uintptr_t>(weapon);
-        const float spread = getSpread(weaponAddress);
-        const auto accuracyBegin = SchemaFinder::Get("C_CSWeaponBase->m_flTurningInaccuracyDelta");
-        const auto accuracyEnd = SchemaFinder::Get("C_CSWeaponBase->m_flRecoilIndex");
-        if (accuracyBegin == 0U || accuracyEnd < accuracyBegin)
-            return false;
-        const std::size_t accuracyStateSize = static_cast<std::size_t>(accuracyEnd - accuracyBegin) + sizeof(float);
-        if (accuracyStateSize == 0U || accuracyStateSize > 0x100U)
-            return false;
-
-        std::array<std::byte, 0x100> accuracyBackup{};
-        auto* accuracyState = reinterpret_cast<void*>(weaponAddress + accuracyBegin);
-        std::memcpy(accuracyBackup.data(), accuracyState, accuracyStateSize);
-        updateAccuracy(weaponAddress);
-        const float inaccuracy = getInaccuracy(weaponAddress, nullptr, nullptr);
-        std::memcpy(accuracyState, accuracyBackup.data(), accuracyStateSize);
-
-        std::uint16_t itemDefinition = 0;
-        const auto attributeManagerOffset = SchemaFinder::Get("C_EconEntity->m_AttributeManager");
-        const auto itemOffset = SchemaFinder::Get("C_AttributeContainer->m_Item");
-        const auto itemDefinitionOffset = SchemaFinder::Get("C_EconItemView->m_iItemDefinitionIndex");
-        if (attributeManagerOffset == 0U || itemOffset == 0U || itemDefinitionOffset == 0U)
-            return false;
-        const auto itemDefinitionAddress = weaponAddress + attributeManagerOffset + itemOffset + itemDefinitionOffset;
-        if (!SafeMemory::read(itemDefinitionAddress, itemDefinition) || itemDefinition == 0)
-            return false;
-
-        const auto subclassOffset = SchemaFinder::Get("C_BaseEntity->m_nSubclassID");
-        const auto bulletCountOffset = SchemaFinder::Get("CCSWeaponBaseVData->m_nNumBullets");
-        std::uintptr_t weaponVData = 0;
-        int bulletCount = 1;
-        if (subclassOffset != 0U && bulletCountOffset != 0U &&
-            SafeMemory::read(weaponAddress + subclassOffset + 0x8U, weaponVData) && weaponVData)
-        {
-            SafeMemory::read(weaponVData + bulletCountOffset, bulletCount);
-        }
-
-        const auto recoilOffset = SchemaFinder::Get("C_CSWeaponBase->m_flRecoilIndex");
-        float recoilIndex = 0.0f;
-        if (recoilOffset == 0U || !SafeMemory::read(weaponAddress + recoilOffset, recoilIndex))
-            return false;
-
-        if (!std::isfinite(spread) || !std::isfinite(inaccuracy) || spread < 0.0f ||
-            inaccuracy < 0.0f || !std::isfinite(recoilIndex) || bulletCount <= 0 || bulletCount > 32)
-            return false;
-
-        constexpr int sampleCount = 128;
-        const int requiredHits = (minimumPercent * sampleCount + 99) / 100;
-        int hits = 0;
-        for (int sample = 0; sample < sampleCount; ++sample)
-        {
-            float spreadX = 0.0f;
-            float spreadY = 0.0f;
-            calculateSpread(static_cast<std::int16_t>(itemDefinition), bulletCount, 0,
-                static_cast<std::uint32_t>(sample + 1), inaccuracy, spread,
-                recoilIndex, &spreadX, &spreadY);
-            if (!std::isfinite(spreadX) || !std::isfinite(spreadY))
-                continue;
-
-            Vector_t direction(
-                forward.x + right.x * spreadX + up.x * spreadY,
-                forward.y + right.y * spreadX + up.y * spreadY,
-                forward.z + right.z * spreadX + up.z * spreadY);
-            const float length = std::sqrt(direction.x * direction.x + direction.y * direction.y + direction.z * direction.z);
-            if (length <= 0.0f || !std::isfinite(length))
-                continue;
-            direction.x /= length;
-            direction.y /= length;
-            direction.z /= length;
-
-            std::uintptr_t sampleHit = 0;
-            // Count only rays that still intersect the entity hit by the center ray.
-            if (TraceDirection(localPawn, start, direction, sampleHit) && sampleHit == targetEntity)
-                ++hits;
-
-        }
-        hitPercent = hits * 100 / sampleCount;
-        return hits >= requiredHits;
-    }
-
     bool g_triggerAttackPressed = false;
-    ULONGLONG g_lastTriggerAttack = 0;
-    ULONGLONG g_triggerLowHitchanceStart = 0;
-    std::uintptr_t g_triggerPendingEntity = 0;
 
     bool WriteTriggerAttack(std::int32_t state)
     {
@@ -387,8 +266,6 @@ void ReleaseTriggerBot()
     if (g_triggerAttackPressed)
         WriteTriggerAttack(256);
     g_triggerAttackPressed = false;
-    g_triggerLowHitchanceStart = 0;
-    g_triggerPendingEntity = 0;
 }
 
 void TriggerBot(void* input, int slot, bool allowed)
@@ -424,8 +301,8 @@ void TriggerBot(void* input, int slot, bool allowed)
     }
 
     std::uintptr_t hitEntity = 0;
-    Vector_t traceStart{}, forward{}, right{}, up{};
-    if (!TraceCrosshair(input, slot, localPawn, traceStart, forward, right, up, hitEntity))
+    Vector_t traceStart{}, forward{};
+    if (!TraceCrosshair(input, slot, localPawn, traceStart, forward, hitEntity))
     {
         DebugConsole::rateLimited("trigger.trace.miss",
             "[runtime] Trigger trace did not hit an entity (view/trace setup or crosshair miss)");
@@ -447,7 +324,7 @@ void TriggerBot(void* input, int slot, bool allowed)
         auto* pawn = I::GameEntity->Instance->Get<C_CSPlayerPawn>(controller->m_hPlayerPawn().index());
         if (!pawn || reinterpret_cast<std::uintptr_t>(pawn) != hitEntity || pawn->getHealth() <= 0)
             continue;
-        if (Config::team_check && pawn->getTeam() == localPawn->getTeam())
+        if (Config::triggerbot_team_check && pawn->getTeam() == localPawn->getTeam())
             continue;
 
         enemyHit = true;
@@ -462,17 +339,6 @@ void TriggerBot(void* input, int slot, bool allowed)
         return;
     }
 
-    const ULONGLONG now = GetTickCount64();
-    if (hitEntity != g_triggerPendingEntity)
-    {
-        g_triggerPendingEntity = hitEntity;
-        g_triggerLowHitchanceStart = now;
-        DebugConsole::rateLimited("trigger.target",
-            "[runtime] Trigger acquired enemy %p; attack cooldown is %d ms from the last shot",
-            reinterpret_cast<void*>(hitEntity), std::clamp(Config::trigger_delay, 0, 250));
-    }
-
-    const ULONGLONG delay = static_cast<ULONGLONG>(std::clamp(Config::trigger_delay, 0, 250));
     if (g_triggerAttackPressed)
     {
         WriteTriggerAttack(256);
@@ -480,40 +346,10 @@ void TriggerBot(void* input, int slot, bool allowed)
         return;
     }
 
-    if (g_lastTriggerAttack != 0 && now - g_lastTriggerAttack < delay)
-        return;
-
-    int hitchance = 0;
-    const int hitchanceThreshold = std::clamp(Config::trigger_hitchance, 0, 100);
-    if (!TriggerHitchance(localPawn, traceStart, forward, right, up,
-        hitEntity, hitchanceThreshold, hitchance))
-    {
-        constexpr ULONGLONG lowHitchanceGraceMs = 5;
-        if (g_triggerLowHitchanceStart == 0)
-            g_triggerLowHitchanceStart = now;
-
-        if (now - g_triggerLowHitchanceStart < lowHitchanceGraceMs)
-        {
-            DebugConsole::rateLimited("trigger.hitchance.low",
-                "[runtime] Trigger waiting: hitchance=%d%% threshold=%d%%", hitchance, hitchanceThreshold);
-            return;
-        }
-
-        DebugConsole::rateLimited("trigger.hitchance.fallback",
-            "[runtime] Trigger grace elapsed; firing despite hitchance=%d%% threshold=%d%%",
-            hitchance, hitchanceThreshold);
-    }
-    else
-        g_triggerLowHitchanceStart = 0;
-
     if (WriteTriggerAttack(65537))
     {
         g_triggerAttackPressed = true;
-        g_lastTriggerAttack = now;
-        g_triggerLowHitchanceStart = now;
-        DebugConsole::rateLimited("trigger.attack.press",
-            "[runtime] Trigger pressed attack; hitchance=%d%% cooldown=%llu ms",
-            hitchance, static_cast<unsigned long long>(delay));
+        DebugConsole::rateLimited("trigger.attack.press", "[runtime] Trigger pressed attack");
     }
 }
 
