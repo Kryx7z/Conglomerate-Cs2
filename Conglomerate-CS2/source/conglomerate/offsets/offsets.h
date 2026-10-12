@@ -2,7 +2,7 @@
 #include <cstddef>
 
 namespace Offset {
-	constexpr std::ptrdiff_t dwLocalPlayerPawn = 0x2560698;
+	constexpr std::ptrdiff_t dwLocalPlayerPawn = 0x255C3C8;
 
 	namespace C_BasePlayerPawn {
 		constexpr std::ptrdiff_t m_vOldOrigin = 0x14A4;
