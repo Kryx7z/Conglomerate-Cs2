@@ -5,8 +5,7 @@
 #include <iostream>
 
 bool ViewMatrix::WorldToScreen(const Vector_t& position, Vector_t& out) const {
-    // viewMatrix is filled by a pattern scan in Visuals::init(). If that scan
-    // fails it stays null, and this used to dereference it every frame.
+    // Visuals::init() fills this from the current client.dll view-matrix offset.
     if (viewMatrix == nullptr)
         return false;
 

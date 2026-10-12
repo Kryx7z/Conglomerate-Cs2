@@ -13,16 +13,6 @@ namespace SafeMemory
         if (!address)
             return false;
 
-#if defined(CONGLOMERATE_DEBUG_SAFE_MEMORY)
-        SIZE_T bytesRead = 0;
-        return ReadProcessMemory(
-            GetCurrentProcess(),
-            reinterpret_cast<const void*>(address),
-            &value,
-            sizeof(T),
-            &bytesRead
-        ) != FALSE && bytesRead == sizeof(T);
-#else
         __try
         {
             value = *reinterpret_cast<const T*>(address);
@@ -32,7 +22,6 @@ namespace SafeMemory
         {
             return false;
         }
-#endif
     }
 
     template <typename T>
@@ -41,16 +30,6 @@ namespace SafeMemory
         if (!address)
             return false;
 
-#if defined(CONGLOMERATE_DEBUG_SAFE_MEMORY)
-        SIZE_T bytesWritten = 0;
-        return WriteProcessMemory(
-            GetCurrentProcess(),
-            reinterpret_cast<void*>(address),
-            &value,
-            sizeof(T),
-            &bytesWritten
-        ) != FALSE && bytesWritten == sizeof(T);
-#else
         __try
         {
             *reinterpret_cast<T*>(address) = value;
@@ -60,6 +39,5 @@ namespace SafeMemory
         {
             return false;
         }
-#endif
     }
 }

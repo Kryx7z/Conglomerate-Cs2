@@ -170,6 +170,19 @@ static void CallTriggerBotSafe(void* input, unsigned int slot, bool allowed)
 	}
 }
 
+static bool RefreshEspCacheSafe()
+{
+	__try
+	{
+		Esp::cache();
+		return true;
+	}
+	__except (SehDiagnostics::handle("hook.create_move.esp_cache"))
+	{
+		return false;
+	}
+}
+
 static void hkFrameStageNotify_impl(void* a1, int stage)
 {
 	H::FrameStageNotify.GetOriginal()(a1, stage);
@@ -196,29 +209,9 @@ static void hkFrameStageNotify_impl(void* a1, int stage)
 		}
 	}
 
-	// frame_render_stage: fires at render-rate on this build (confirmed empirically).
 	if (stage != 12)
 		return;
 	DebugConsole::once("frame_stage_12", "[runtime] FrameStageNotify reached stage 12");
-
-	auto lp = H::oGetLocalPlayer ? H::oGetLocalPlayer(0) : nullptr;
-	if (!lp)
-	{
-		DebugConsole::rateLimited("get_local_pawn.null", "[runtime] GetLocalPawn returned null during stage 12");
-		return;
-	}
-	DebugConsole::once("get_local_pawn.nonnull", "[runtime] GetLocalPawn returned a pawn during stage 12");
-
-	__try
-	{
-		Esp::cache();
-		DebugConsole::once("esp.cache.called", "[runtime] ESP cache ran; cached player count=%llu",
-			static_cast<unsigned long long>(cached_players.size()));
-	}
-	__except (SehDiagnostics::handle("hook.frame_stage.esp"))
-	{
-	}
-
 }
 
 void __fastcall H::hkFrameStageNotify(void* a1, int stage)
@@ -261,6 +254,18 @@ void __fastcall H::hkCreateMove(void* input, unsigned int slot, std::int64_t act
 			ReleaseTriggerBot();
 			return;
 		}
+	}
+
+	static ULONGLONG lastEspCacheRefresh = 0;
+	const ULONGLONG now = GetTickCount64();
+	const bool espEnabled = Config::esp || Config::showHealth || Config::espFill ||
+		Config::showNameTags || Config::flags || Config::skeleton;
+	if (espEnabled && now - lastEspCacheRefresh >= 50)
+	{
+		lastEspCacheRefresh = now;
+		if (RefreshEspCacheSafe())
+			DebugConsole::once("esp.cache.called", "[runtime] ESP cache refreshed from CreateMove; cached player count=%llu",
+				static_cast<unsigned long long>(cached_players.size()));
 	}
 
 	if (menuOpen)
@@ -370,7 +375,7 @@ void H::Hooks::init() {
 	InstallHook("DrawArray/DrawAggeregateObject", "scenesystem", drawArray, DrawArray,
 		reinterpret_cast<void*>(&chams::hook));
 	// Chams need the scene object and primitive buffer before the renderer batches
-	// meshes. This is the GeneratePrimitives path used by the supplied reference.
+	// meshes.
 	const uintptr_t generatePrimitives = scan(
 		"scenesystem", "48 8B C4 48 89 58 20 4C 89 40 18 48 89 50 10 48 89 48 08");
 	InstallHook("GeneratePrimitives/chams", "scenesystem", generatePrimitives, GeneratePrimitives,
@@ -417,10 +422,6 @@ void H::Hooks::init() {
 	}
 	InstallHook("GetRenderFov", "client", renderFov, GetRenderFov,
 		reinterpret_cast<void*>(&hkGetRenderFov));
-	// The camera view-setup path is separate from GetRenderFov on recent builds
-	// and is what resets the view when AUG/SG are equipped. Resolve the current
-	// view function only when the candidate is executable; this keeps older
-	// builds on the existing FOV hook instead of installing an unsafe address.
 	const uintptr_t viewPattern = scan("client", "A8 00 00 00 48 8D 05 ? ? ? ? 4C 89 74 24 20");
 	if (viewPattern)
 	{

@@ -124,16 +124,15 @@ namespace DebugConsole
 
 	inline void rateLimited(const char* key, const char* format, ...)
 	{
-		char message[1024]{};
-		va_list args;
-		va_start(args, format);
-		_vsnprintf_s(message, sizeof(message), _TRUNCATE, format, args);
-		va_end(args);
-
 		std::lock_guard<std::mutex> lock(g_mutex);
 		Entry* entry = findEntry(key);
 		if (!entry)
 		{
+			char message[1024]{};
+			va_list args;
+			va_start(args, format);
+			_vsnprintf_s(message, sizeof(message), _TRUNCATE, format, args);
+			va_end(args);
 			emitLocked(message);
 			return;
 		}
@@ -144,6 +143,12 @@ namespace DebugConsole
 			++entry->suppressed;
 			return;
 		}
+
+		char message[1024]{};
+		va_list args;
+		va_start(args, format);
+		_vsnprintf_s(message, sizeof(message), _TRUNCATE, format, args);
+		va_end(args);
 
 		if (entry->seen && entry->suppressed)
 		{

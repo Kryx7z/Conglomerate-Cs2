@@ -1,5 +1,6 @@
 #include "visuals.h"
 #include <algorithm>
+#include <array>
 #include <string>
 #include <cmath>
 #include <cctype>
@@ -7,6 +8,7 @@
 #include <cstdint>
 #include <cfloat>
 #include <utility>
+#include <Windows.h>
 #include "../../hooks/hooks.h"
 #include "../../players/players.h"
 #include "../../utils/memory/patternscan/patternscan.h"
@@ -172,10 +174,12 @@ namespace
 }
 
 void Visuals::init() {
-    const uintptr_t matrixPattern = M::patternScan("client", "48 8D 0D ? ? ? ? 48 C1 E0 06");
-    viewMatrix.viewMatrix = (viewmatrix_t*)M::getAbsoluteAddress(matrixPattern, 3, 0);
-    DebugConsole::logf("[scan] view matrix: pattern=%p target=%p",
-        reinterpret_cast<void*>(matrixPattern), static_cast<void*>(viewMatrix.viewMatrix));
+    const uintptr_t clientBase = reinterpret_cast<uintptr_t>(GetModuleHandleA("client.dll"));
+    viewMatrix.viewMatrix = clientBase
+        ? reinterpret_cast<viewmatrix_t*>(clientBase + 0x2561CD0)
+        : nullptr;
+    DebugConsole::logf("[offset] view matrix: client=%p target=%p",
+        reinterpret_cast<void*>(clientBase), static_cast<void*>(viewMatrix.viewMatrix));
 }
 
 void Esp::cache()
@@ -186,7 +190,8 @@ void Esp::cache()
         return;
     }
 
-    constexpr int nMaxHighestEntity = 64;
+    const int nMaxHighestEntity = std::clamp(
+        I::GameEntity->Instance->GetHighestEntityIndex(), 0, 0x7FFE);
 
     cached_players.clear();
     cached_local.reset();
@@ -330,6 +335,23 @@ void Visuals::esp() {
         if (Config::skeleton)
         {
             const ImU32 skeletonColor = ImGui::ColorConvertFloat4ToU32(Config::skeletonColor);
+            std::array<Vector_t, 23> bonePositions{};
+            std::array<bool, 23> boneChecked{};
+            std::array<bool, 23> boneValid{};
+            const auto getCachedBonePosition = [&](BoneID bone, Vector_t& position)
+            {
+                const auto index = static_cast<std::size_t>(bone);
+                if (!boneChecked[index])
+                {
+                    boneValid[index] = GetBonePosition(Player.player, bone, bonePositions[index]);
+                    boneChecked[index] = true;
+                }
+                if (!boneValid[index])
+                    return false;
+
+                position = bonePositions[index];
+                return true;
+            };
             const std::pair<BoneID, BoneID> bones[] = {
                 {BoneID::PELVIS, BoneID::SPINE1}, {BoneID::SPINE1, BoneID::SPINE2},
                 {BoneID::SPINE2, BoneID::NECK}, {BoneID::NECK, BoneID::HEAD},
@@ -344,8 +366,8 @@ void Visuals::esp() {
             for (const auto& [from, to] : bones)
             {
                 Vector_t fromWorld, toWorld, fromScreen, toScreen;
-                if (GetBonePosition(Player.player, from, fromWorld) &&
-                    GetBonePosition(Player.player, to, toWorld) &&
+                if (getCachedBonePosition(from, fromWorld) &&
+                    getCachedBonePosition(to, toWorld) &&
                     viewMatrix.WorldToScreen(fromWorld, fromScreen) &&
                     viewMatrix.WorldToScreen(toWorld, toScreen))
                 {
