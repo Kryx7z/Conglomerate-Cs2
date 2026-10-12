@@ -3,12 +3,15 @@
   </a>
 </p> 
 <p align="center">
-  <img src="https://img.shields.io/badge/C%2B%2B-9B59B6?style=for-the-badge&logo=c%2B%2B&logoColor=white">
-  <img src="https://img.shields.io/badge/Visual_Studio-8E44AD?style=for-the-badge&logo=visual%20studio&logoColor=white">
-  <img src="https://img.shields.io/badge/Windows-7D3F9C?style=for-the-badge&logo=windows&logoColor=white">
-  </a>
-  <img src="https://img.shields.io/badge/license-MIT-8E44AD?style=for-the-badge&logo=&logoColor=white">
-  <img src="https://img.shields.io/badge/CS2-9B59B6?style=for-the-badge&logo=counter-strike&logoColor=white">
+  <img src="https://img.shields.io/badge/C%2B%2B-8B5CF6?style=for-the-badge&logo=c%2B%2B&logoColor=white">
+
+  <img src="https://img.shields.io/badge/Visual_Studio-25252D?style=for-the-badge&logo=visual%20studio&logoColor=8B5CF6">
+
+  <img src="https://img.shields.io/badge/Windows-8B5CF6?style=for-the-badge&logo=windows&logoColor=white">
+
+  <img src="https://img.shields.io/badge/license-MIT-25252D?style=for-the-badge&logoColor=8B5CF6">
+
+  <img src="https://img.shields.io/badge/CS2-8B5CF6?style=for-the-badge&logo=counter-strike&logoColor=white">
 </p>
 
 ---
