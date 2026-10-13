@@ -306,43 +306,52 @@ void ApplyImGuiTheme() {
     ImGuiStyle& style = ImGui::GetStyle();
     ImVec4* colors = style.Colors;
 
-    const ImVec4 purple(168.0f / 255.0f, 155.0f / 255.0f, 242.0f / 255.0f, 1.0f); // #A89BF2
-    const ImVec4 purpleBright(190.0f / 255.0f, 181.0f / 255.0f, 255.0f / 255.0f, 1.0f);
-    const ImVec4 black(22.0f / 255.0f, 21.0f / 255.0f, 27.0f / 255.0f, 1.0f); // Cynth #16151B
-    const ImVec4 surface(23.0f / 255.0f, 22.0f / 255.0f, 28.0f / 255.0f, 1.0f); // #17161C
-    const ImVec4 surfaceHover(0.15f, 0.14f, 0.19f, 1.0f);
-    const ImVec4 outline(0.16f, 0.15f, 0.19f, 1.0f);
-    const ImVec4 muted(0.62f, 0.58f, 0.79f, 1.0f);
+    const ImVec4 purple(176.0f / 255.0f, 124.0f / 255.0f, 255.0f / 255.0f, 1.0f); // #B07CFF neon accent
+    const ImVec4 purpleBright(205.0f / 255.0f, 170.0f / 255.0f, 255.0f / 255.0f, 1.0f);
+    const ImVec4 windowBg(9.0f / 255.0f, 9.0f / 255.0f, 12.0f / 255.0f, 1.0f);
+    const ImVec4 inset(5.0f / 255.0f, 5.0f / 255.0f, 8.0f / 255.0f, 1.0f);
+    const ImVec4 surface(14.0f / 255.0f, 14.0f / 255.0f, 19.0f / 255.0f, 1.0f);
+    const ImVec4 surfaceHover(0.095f, 0.09f, 0.13f, 1.0f);
+    const ImVec4 outline(0.135f, 0.13f, 0.17f, 1.0f);
+    const ImVec4 text = purple; 
+    const ImVec4 muted(0.52f, 0.49f, 0.66f, 1.0f);
 
-    colors[ImGuiCol_WindowBg] = black;
-    colors[ImGuiCol_ChildBg] = surface;
-    colors[ImGuiCol_PopupBg] = black;
+    colors[ImGuiCol_WindowBg] = windowBg;
+    colors[ImGuiCol_ChildBg] = windowBg; 
+    colors[ImGuiCol_PopupBg] = surface;
     colors[ImGuiCol_Border] = outline;
-    colors[ImGuiCol_BorderShadow] = ImVec4(0.0f, 0.0f, 0.0f, 0.35f);
-    colors[ImGuiCol_Text] = purple;
+    colors[ImGuiCol_BorderShadow] = ImVec4(0.0f, 0.0f, 0.0f, 0.0f);
+    colors[ImGuiCol_Text] = text;
     colors[ImGuiCol_TextDisabled] = muted;
-    colors[ImGuiCol_FrameBg] = black;
+    colors[ImGuiCol_FrameBg] = inset;
     colors[ImGuiCol_FrameBgHovered] = surfaceHover;
-    colors[ImGuiCol_FrameBgActive] = ImVec4(0.16f, 0.14f, 0.23f, 1.0f);
-    colors[ImGuiCol_CheckMark] = black;
+    colors[ImGuiCol_FrameBgActive] = ImVec4(0.14f, 0.10f, 0.24f, 1.0f);
+    colors[ImGuiCol_CheckMark] = windowBg;
     colors[ImGuiCol_SliderGrab] = purple;
     colors[ImGuiCol_SliderGrabActive] = purpleBright;
-    colors[ImGuiCol_Button] = surface;
-    colors[ImGuiCol_ButtonHovered] = surfaceHover;
-    colors[ImGuiCol_ButtonActive] = ImVec4(0.16f, 0.14f, 0.23f, 1.0f);
-    colors[ImGuiCol_Header] = ImVec4(0.15f, 0.13f, 0.24f, 1.0f);
+    colors[ImGuiCol_Button] = ImVec4(0.085f, 0.08f, 0.12f, 1.0f);
+    colors[ImGuiCol_ButtonHovered] = ImVec4(0.16f, 0.11f, 0.27f, 1.0f);
+    colors[ImGuiCol_ButtonActive] = ImVec4(0.22f, 0.14f, 0.40f, 1.0f);
+    colors[ImGuiCol_Header] = ImVec4(0.15f, 0.10f, 0.27f, 1.0f);
     colors[ImGuiCol_HeaderHovered] = surfaceHover;
-    colors[ImGuiCol_HeaderActive] = ImVec4(0.20f, 0.17f, 0.32f, 1.0f);
+    colors[ImGuiCol_HeaderActive] = ImVec4(0.20f, 0.13f, 0.36f, 1.0f);
     colors[ImGuiCol_Separator] = outline;
     colors[ImGuiCol_SeparatorHovered] = purple;
     colors[ImGuiCol_SeparatorActive] = purpleBright;
+    colors[ImGuiCol_ScrollbarBg] = ImVec4(0.0f, 0.0f, 0.0f, 0.0f);
+    colors[ImGuiCol_ScrollbarGrab] = ImVec4(0.17f, 0.15f, 0.25f, 1.0f);
+    colors[ImGuiCol_ScrollbarGrabHovered] = ImVec4(0.27f, 0.20f, 0.42f, 1.0f);
+    colors[ImGuiCol_ScrollbarGrabActive] = purple;
+    colors[ImGuiCol_ResizeGrip] = ImVec4(purple.x, purple.y, purple.z, 0.20f);
+    colors[ImGuiCol_ResizeGripHovered] = ImVec4(purple.x, purple.y, purple.z, 0.55f);
+    colors[ImGuiCol_ResizeGripActive] = ImVec4(purple.x, purple.y, purple.z, 0.85f);
     colors[ImGuiCol_Tab] = surface;
     colors[ImGuiCol_TabHovered] = surfaceHover;
-    colors[ImGuiCol_TabActive] = ImVec4(0.15f, 0.13f, 0.24f, 1.0f);
+    colors[ImGuiCol_TabActive] = ImVec4(0.15f, 0.10f, 0.27f, 1.0f);
     colors[ImGuiCol_TabUnfocused] = surface;
     colors[ImGuiCol_TabUnfocusedActive] = surfaceHover;
 
-    style.WindowRounding = 13.0f;
+    style.WindowRounding = 14.0f;
     style.FrameRounding = 6.0f;
     style.ScrollbarRounding = 7.0f;
     style.GrabRounding = 6.0f;
@@ -350,9 +359,11 @@ void ApplyImGuiTheme() {
     style.ChildRounding = 10.0f;
     style.PopupRounding = 8.0f;
 
-    style.ItemSpacing = ImVec2(10.0f, 7.0f);
-    style.FramePadding = ImVec2(8.0f, 5.0f);
-    style.WindowPadding = ImVec2(16.0f, 14.0f);
+    style.ItemSpacing = ImVec2(10.0f, 9.0f);
+    style.ItemInnerSpacing = ImVec2(8.0f, 6.0f);
+    style.FramePadding = ImVec2(9.0f, 5.0f);
+    style.WindowPadding = ImVec2(18.0f, 14.0f);
+    style.ScrollbarSize = 8.0f;
     style.FrameBorderSize = 0.0f;
     style.TabBorderSize = 0.0f;
     style.WindowBorderSize = 1.0f;
@@ -361,16 +372,29 @@ void ApplyImGuiTheme() {
     style.GrabMinSize = 9.0f;
 }
 
-static const ImVec4 kMenuPurple(168.0f / 255.0f, 155.0f / 255.0f, 242.0f / 255.0f, 1.0f);
-static constexpr ImU32 kMenuPurpleU32 = IM_COL32(168, 155, 242, 255);
-static constexpr ImU32 kMenuCheckU32 = IM_COL32(22, 21, 27, 255);
+static const ImVec4 kMenuPurple(176.0f / 255.0f, 124.0f / 255.0f, 255.0f / 255.0f, 1.0f); // #B07CFF
+static constexpr ImU32 kMenuPurpleU32 = IM_COL32(176, 124, 255, 255);
+static constexpr ImU32 kMenuCheckU32 = IM_COL32(245, 243, 255, 255);
+static const ImVec4 kMenuMuted(0.56f, 0.54f, 0.69f, 1.0f);
+static constexpr ImU32 kMenuPanelU32 = IM_COL32(15, 15, 20, 255);
+static constexpr ImU32 kMenuHeaderU32 = IM_COL32(23, 22, 30, 255);
+static constexpr ImU32 kMenuOutlineU32 = IM_COL32(36, 34, 48, 255);
+static constexpr float kPanelHeaderHeight = 34.0f;
 
 static bool MenuCheckbox(const char* label, bool* value)
 {
-    ImGui::PushStyleColor(ImGuiCol_FrameBg, ImVec4(14.0f / 255.0f, 13.0f / 255.0f, 17.0f / 255.0f, 1.0f));
-    ImGui::PushStyleColor(ImGuiCol_FrameBgHovered, ImVec4(28.0f / 255.0f, 26.0f / 255.0f, 34.0f / 255.0f, 1.0f));
+    ImGui::PushStyleColor(ImGuiCol_FrameBg, ImVec4(5.0f / 255.0f, 5.0f / 255.0f, 8.0f / 255.0f, 1.0f));
+    ImGui::PushStyleColor(ImGuiCol_FrameBgHovered, ImVec4(22.0f / 255.0f, 21.0f / 255.0f, 30.0f / 255.0f, 1.0f));
     const bool changed = ImGui::Checkbox(label, value);
     ImGui::PopStyleColor(2);
+    {
+        const ImVec2 min = ImGui::GetItemRectMin();
+        const float boxSize = ImGui::GetFrameHeight();
+        const float rounding = ImGui::GetStyle().FrameRounding;
+        ImDrawList* drawList = ImGui::GetWindowDrawList();
+        if (!*value)
+            drawList->AddRect(min, ImVec2(min.x + boxSize, min.y + boxSize), kMenuOutlineU32, rounding, ImDrawCornerFlags_All, 1.0f);
+    }
     if (*value)
     {
         const ImVec2 min = ImGui::GetItemRectMin();
@@ -389,9 +413,9 @@ static bool MenuCheckbox(const char* label, bool* value)
 
 static bool MenuSliderFloat(const char* label, float* value, float min, float max, const char* format = "%.3f")
 {
-    ImGui::PushStyleColor(ImGuiCol_FrameBg, ImVec4(14.0f / 255.0f, 13.0f / 255.0f, 17.0f / 255.0f, 1.0f));
-    ImGui::PushStyleColor(ImGuiCol_FrameBgHovered, ImVec4(28.0f / 255.0f, 26.0f / 255.0f, 34.0f / 255.0f, 1.0f));
-    ImGui::PushStyleColor(ImGuiCol_FrameBgActive, ImVec4(38.0f / 255.0f, 35.0f / 255.0f, 45.0f / 255.0f, 1.0f));
+    ImGui::PushStyleColor(ImGuiCol_FrameBg, ImVec4(5.0f / 255.0f, 5.0f / 255.0f, 8.0f / 255.0f, 1.0f));
+    ImGui::PushStyleColor(ImGuiCol_FrameBgHovered, ImVec4(22.0f / 255.0f, 21.0f / 255.0f, 30.0f / 255.0f, 1.0f));
+    ImGui::PushStyleColor(ImGuiCol_FrameBgActive, ImVec4(32.0f / 255.0f, 28.0f / 255.0f, 46.0f / 255.0f, 1.0f));
     const bool changed = ImGui::SliderFloat(label, value, min, max, format);
     ImGui::PopStyleColor(3);
     return changed;
@@ -399,9 +423,9 @@ static bool MenuSliderFloat(const char* label, float* value, float min, float ma
 
 static bool MenuSliderInt(const char* label, int* value, int min, int max, const char* format = "%d")
 {
-    ImGui::PushStyleColor(ImGuiCol_FrameBg, ImVec4(14.0f / 255.0f, 13.0f / 255.0f, 17.0f / 255.0f, 1.0f));
-    ImGui::PushStyleColor(ImGuiCol_FrameBgHovered, ImVec4(28.0f / 255.0f, 26.0f / 255.0f, 34.0f / 255.0f, 1.0f));
-    ImGui::PushStyleColor(ImGuiCol_FrameBgActive, ImVec4(38.0f / 255.0f, 35.0f / 255.0f, 45.0f / 255.0f, 1.0f));
+    ImGui::PushStyleColor(ImGuiCol_FrameBg, ImVec4(5.0f / 255.0f, 5.0f / 255.0f, 8.0f / 255.0f, 1.0f));
+    ImGui::PushStyleColor(ImGuiCol_FrameBgHovered, ImVec4(22.0f / 255.0f, 21.0f / 255.0f, 30.0f / 255.0f, 1.0f));
+    ImGui::PushStyleColor(ImGuiCol_FrameBgActive, ImVec4(32.0f / 255.0f, 28.0f / 255.0f, 46.0f / 255.0f, 1.0f));
     const bool changed = ImGui::SliderInt(label, value, min, max, format);
     ImGui::PopStyleColor(3);
     return changed;
@@ -414,28 +438,44 @@ static void BeginMenuPanel(const char* id, const char* title, const ImVec2& size
     const ImVec2 panelSize(size.x > 0.0f ? size.x : available.x, size.y > 0.0f ? size.y : available.y);
     ImDrawList* drawList = ImGui::GetWindowDrawList();
     drawList->AddRectFilled(
-        ImVec2(panelPos.x + 1.0f, panelPos.y + 6.0f),
-        ImVec2(panelPos.x + panelSize.x + 1.0f, panelPos.y + panelSize.y + 6.0f),
-        IM_COL32(0, 0, 0, 145), 10.0f);
-    drawList->AddRectFilled(
-        ImVec2(panelPos.x + 1.0f, panelPos.y + 3.0f),
-        ImVec2(panelPos.x + panelSize.x + 1.0f, panelPos.y + panelSize.y + 3.0f),
-        IM_COL32(0, 0, 0, 55), 10.0f);
-    ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4(23.0f / 255.0f, 22.0f / 255.0f, 28.0f / 255.0f, 1.0f));
-    ImGui::PushStyleColor(ImGuiCol_Border, ImVec4(0.16f, 0.15f, 0.19f, 1.0f));
+        ImVec2(panelPos.x, panelPos.y + 4.0f),
+        ImVec2(panelPos.x + panelSize.x, panelPos.y + panelSize.y + 4.0f),
+        IM_COL32(0, 0, 0, 70), 10.0f);
+    ImGui::PushStyleColor(ImGuiCol_ChildBg, ImGui::ColorConvertU32ToFloat4(kMenuPanelU32));
+    ImGui::PushStyleColor(ImGuiCol_Border, ImGui::ColorConvertU32ToFloat4(kMenuOutlineU32));
     ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding, 10.0f);
-    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(14.0f, 12.0f));
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(16.0f, 12.0f));
     ImGui::BeginChild(id, size, true);
-    ImGui::TextColored(kMenuPurple, "%s", title);
-    ImGui::Separator();
-    ImGui::Spacing();
+
+    const ImVec2 windowPos = ImGui::GetWindowPos();
+    const float scrollY = ImGui::GetScrollY();
+    ImGui::PushClipRect(windowPos, ImVec2(windowPos.x + ImGui::GetWindowWidth(),
+        windowPos.y + ImGui::GetWindowHeight()), false);
+    ImGui::GetWindowDrawList()->AddRectFilled(
+        ImVec2(windowPos.x + 1.0f, windowPos.y + 1.0f - scrollY),
+        ImVec2(windowPos.x + ImGui::GetWindowWidth() - 1.0f, windowPos.y + kPanelHeaderHeight - scrollY),
+        kMenuHeaderU32, 9.0f, ImDrawCornerFlags_Top);
+    ImGui::PopClipRect();
+    ImGui::SetCursorPos(ImVec2(16.0f, (kPanelHeaderHeight - ImGui::GetTextLineHeight()) * 0.5f));
+    ImGui::TextColored(kMenuMuted, "%s", title);
+    ImGui::SetCursorPosY(kPanelHeaderHeight + 12.0f);
+    ImGui::PushItemWidth(ImGui::GetContentRegionAvail().x * 0.58f);
 }
 
 static void EndMenuPanel()
 {
+    ImGui::PopItemWidth();
     ImGui::EndChild();
     ImGui::PopStyleVar(2);
     ImGui::PopStyleColor(2);
+}
+
+static void MenuSubheader(const char* title)
+{
+    ImGui::Spacing();
+    ImGui::TextColored(kMenuMuted, "%s", title);
+    ImGui::Separator();
+    ImGui::Spacing();
 }
 
 static void RenderPreviewPanel(const ImVec2& size)
@@ -449,10 +489,10 @@ static void RenderPreviewPanel(const ImVec2& size)
     {
         const bool selected = g_previewCounterTerrorist == isCounterTerrorist;
         ImGui::PushStyleColor(ImGuiCol_Button, selected
-            ? ImVec4(0.23f, 0.20f, 0.36f, 1.0f)
-            : ImVec4(22.0f / 255.0f, 21.0f / 255.0f, 27.0f / 255.0f, 1.0f));
-        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.15f, 0.14f, 0.19f, 1.0f));
-        ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.20f, 0.17f, 0.32f, 1.0f));
+            ? ImVec4(0.20f, 0.12f, 0.36f, 1.0f)
+            : ImVec4(10.0f / 255.0f, 10.0f / 255.0f, 14.0f / 255.0f, 1.0f));
+        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.14f, 0.10f, 0.24f, 1.0f));
+        ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.22f, 0.14f, 0.40f, 1.0f));
         if (ImGui::Button(label, ImVec2(tabWidth, 26.0f)))
             g_previewCounterTerrorist = isCounterTerrorist;
         ImGui::PopStyleColor(3);
@@ -473,6 +513,7 @@ static void RenderPreviewPanel(const ImVec2& size)
     const ImVec2 canvasMin = ImGui::GetItemRectMin();
     const ImVec2 canvasMax = ImGui::GetItemRectMax();
     ImDrawList* drawList = ImGui::GetWindowDrawList();
+    drawList->AddRectFilled(canvasMin, canvasMax, IM_COL32(6, 6, 9, 255), 8.0f);
     drawList->PushClipRect(canvasMin, canvasMax, true);
 
     if (!g_previewModelTexture)
@@ -481,7 +522,7 @@ static void RenderPreviewPanel(const ImVec2& size)
         const ImVec2 messageSize = ImGui::CalcTextSize(message);
         drawList->AddText(ImVec2(canvasMin.x + (canvasSize.x - messageSize.x) * 0.5f,
             canvasMin.y + (canvasSize.y - messageSize.y) * 0.5f),
-            IM_COL32(168, 155, 242, 255), message);
+            IM_COL32(176, 124, 255, 255), message);
         drawList->PopClipRect();
         EndMenuPanel();
         return;
@@ -577,7 +618,7 @@ static void RenderPreviewPanel(const ImVec2& size)
         drawList->AddText(previewFont, previewFontSize,
             ImVec2(textPos.x + 1.0f, textPos.y + 1.0f), IM_COL32(0, 0, 0, 230), previewName);
         drawList->AddText(previewFont, previewFontSize,
-            textPos, IM_COL32(168, 155, 242, 255), previewName);
+            textPos, IM_COL32(176, 124, 255, 255), previewName);
     }
 
     if (showFlags)
@@ -589,15 +630,15 @@ static void RenderPreviewPanel(const ImVec2& size)
             drawList->AddText(previewFont, previewFontSize, ImVec2(flagX, flagY), color, text);
             flagY += previewFontSize + 3.0f;
         };
-        drawFlag("SCOPED", IM_COL32(168, 155, 242, 255));
-        drawFlag("FLASHED", IM_COL32(168, 155, 242, 255));
+        drawFlag("SCOPED", IM_COL32(176, 124, 255, 255));
+        drawFlag("FLASHED", IM_COL32(176, 124, 255, 255));
 
         const char* weaponLabel = "WEAPON";
         const ImVec2 weaponSize = previewFont->CalcTextSizeA(previewFontSize,
             FLT_MAX, 0.0f, weaponLabel);
         drawList->AddText(previewFont, previewFontSize,
             ImVec2(imageMin.x + (imageWidth - weaponSize.x) * 0.5f, imageMax.y + 3.0f),
-            IM_COL32(168, 155, 242, 255), weaponLabel);
+            IM_COL32(176, 124, 255, 255), weaponLabel);
 
         if (!g_previewCounterTerrorist)
         {
@@ -721,17 +762,21 @@ static bool ColorEditHexOnly(const char* label, ImVec4& color)
     bool valueChanged = false;
 
     ImGui::PushID(label);
+    const float swatchWidth = ImGui::GetFrameHeight() * 1.6f;
+    ImGui::AlignTextToFramePadding();
+    ImGui::TextUnformatted(label);
+    ImGui::SameLine();
+    ImGui::SetCursorPosX((std::max)(ImGui::GetCursorPosX(), ImGui::GetContentRegionMax().x - swatchWidth));
     if (ImGui::ColorButton(
             "##ColorPreview",
             color,
             ImGuiColorEditFlags_AlphaPreview | ImGuiColorEditFlags_NoTooltip,
-            ImVec2(ImGui::GetFrameHeight(), ImGui::GetFrameHeight())))
+            ImVec2(swatchWidth, ImGui::GetFrameHeight())))
     {
         ImGui::OpenPopup("##ColorPicker");
     }
-
-    ImGui::SameLine();
-    ImGui::TextUnformatted(label);
+    ImGui::GetWindowDrawList()->AddRect(ImGui::GetItemRectMin(), ImGui::GetItemRectMax(),
+        kMenuOutlineU32, ImGui::GetStyle().FrameRounding, ImDrawCornerFlags_All, 1.0f);
 
     if (ImGui::BeginPopup("##ColorPicker"))
     {
@@ -805,11 +850,34 @@ static void DrawCircleLabel(const char* label, float diameter)
     const ImVec2 cursor = ImGui::GetCursorScreenPos();
     const ImVec2 center(cursor.x + diameter * 0.5f, cursor.y + diameter * 0.5f);
     ImDrawList* drawList = ImGui::GetWindowDrawList();
-    drawList->AddCircleFilled(center, diameter * 0.5f, IM_COL32(12, 11, 18, 255), 32);
-    drawList->AddCircle(center, diameter * 0.5f, IM_COL32(168, 155, 242, 210), 32, 1.3f);
+    drawList->AddCircleFilled(center, diameter * 0.5f, IM_COL32(5, 5, 8, 255), 32);
+    drawList->AddCircle(center, diameter * 0.5f, IM_COL32(176, 124, 255, 210), 32, 1.3f);
     const ImVec2 textSize = ImGui::CalcTextSize(label);
     drawList->AddText(ImVec2(center.x - textSize.x * 0.5f, center.y - textSize.y * 0.5f),
-        IM_COL32(168, 155, 242, 255), label);
+        IM_COL32(176, 124, 255, 255), label);
+    ImGui::Dummy(ImVec2(diameter, diameter));
+}
+
+static void DrawClusterLogo(float diameter)
+{
+    const ImVec2 cursor = ImGui::GetCursorScreenPos();
+    const float radius = diameter * 0.5f;
+    const ImVec2 center(cursor.x + radius, cursor.y + radius);
+    ImDrawList* drawList = ImGui::GetWindowDrawList();
+
+    const float orbit = radius * 0.42f;
+    const float petal = radius * 0.30f;
+    const ImVec2 petals[3] = {
+        ImVec2(center.x, center.y - orbit),
+        ImVec2(center.x - orbit * 0.866f, center.y + orbit * 0.5f),
+        ImVec2(center.x + orbit * 0.866f, center.y + orbit * 0.5f),
+    };
+    for (const ImVec2& position : petals)
+        drawList->AddCircleFilled(position, petal, kMenuPurpleU32, 24);
+
+    const float core = radius * 0.22f;
+    drawList->AddCircleFilled(center, core + radius * 0.05f, IM_COL32(9, 9, 12, 255), 24);
+    drawList->AddCircleFilled(center, core, IM_COL32(215, 185, 255, 255), 24);
     ImGui::Dummy(ImVec2(diameter, diameter));
 }
 
@@ -826,17 +894,18 @@ static void DrawCircleAvatar(ID3D11ShaderResourceView* texture, const char* fall
     drawList->AddImageRounded(reinterpret_cast<ImTextureID>(texture), cursor,
         ImVec2(cursor.x + diameter, cursor.y + diameter), ImVec2(0.0f, 0.0f), ImVec2(1.0f, 1.0f),
         IM_COL32_WHITE, diameter * 0.5f);
-    drawList->AddCircle(center, diameter * 0.5f, IM_COL32(168, 155, 242, 210), 32, 1.3f);
+    drawList->AddCircle(center, diameter * 0.5f, IM_COL32(176, 124, 255, 210), 32, 1.3f);
     ImGui::Dummy(ImVec2(diameter, diameter));
 }
 
 static bool DrawNamedTab(const char* label, int tab, int& activeTab, float width)
 {
     const bool selected = activeTab == tab;
-    ImGui::PushStyleColor(ImGuiCol_Button, selected ? ImVec4(0.23f, 0.20f, 0.36f, 1.0f) : ImVec4(22.0f / 255.0f, 21.0f / 255.0f, 27.0f / 255.0f, 1.0f));
-    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.15f, 0.13f, 0.24f, 1.0f));
-    ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.20f, 0.17f, 0.32f, 1.0f));
-    ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 7.0f);
+    ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.0f, 0.0f, 0.0f, 0.0f));
+    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(1.0f, 1.0f, 1.0f, 0.04f));
+    ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(1.0f, 1.0f, 1.0f, 0.07f));
+    ImGui::PushStyleColor(ImGuiCol_Text, selected ? kMenuPurple : kMenuMuted);
+    ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 8.0f);
     ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(8.0f, 7.0f));
     const bool pressed = ImGui::Button(label, ImVec2(width, 35.0f));
     if (selected)
@@ -849,8 +918,8 @@ static bool DrawNamedTab(const char* label, int tab, int& activeTab, float width
         const float underlineCenter = (underlineMin + underlineMax) * 0.5f;
         const float underlineTop = max.y - 3.0f;
         const float underlineBottom = max.y - 1.0f;
-        const ImU32 transparentPurple = IM_COL32(168, 155, 242, 0);
-        const ImU32 solidPurple = IM_COL32(168, 155, 242, 255);
+        const ImU32 transparentPurple = IM_COL32(176, 124, 255, 0);
+        const ImU32 solidPurple = IM_COL32(176, 124, 255, 255);
         drawList->AddRectFilledMultiColor(
             ImVec2(underlineMin, underlineTop), ImVec2(underlineCenter, underlineBottom),
             transparentPurple, solidPurple, solidPurple, transparentPurple);
@@ -859,7 +928,7 @@ static bool DrawNamedTab(const char* label, int tab, int& activeTab, float width
             solidPurple, transparentPurple, transparentPurple, solidPurple);
     }
     ImGui::PopStyleVar(2);
-    ImGui::PopStyleColor(3);
+    ImGui::PopStyleColor(4);
     if (pressed)
         activeTab = tab;
     return pressed;
@@ -886,15 +955,27 @@ void Menu::render()
         return;
     }
 
+    {
+        const ImVec2 wp = ImGui::GetWindowPos();
+        const ImVec2 ws = ImGui::GetWindowSize();
+        ImDrawList* bg = ImGui::GetBackgroundDrawList();
+        for (int i = 1; i <= 16; ++i)
+        {
+            const float e = static_cast<float>(i) * 1.5f;
+            bg->AddRectFilled(ImVec2(wp.x - e, wp.y - e + 6.0f), ImVec2(wp.x + ws.x + e, wp.y + ws.y + e + 6.0f),
+                IM_COL32(0, 0, 0, 5), 14.0f + e);
+        }
+    }
+
     const float headerHeight = 50.0f;
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 3.0f));
     ImGui::BeginChild("TopBar", ImVec2(0.0f, headerHeight), false, ImGuiWindowFlags_NoScrollbar);
-    DrawCircleLabel("CM", 34.0f);
+    DrawClusterLogo(34.0f);
 
     const float tabWidths[] = { 58.0f, 78.0f, 94.0f, 62.0f, 72.0f };
     const float tabsWidth = tabWidths[0] + tabWidths[1] + tabWidths[2] + tabWidths[3] + tabWidths[4] + 4.0f * 7.0f;
-    const float tabsStart = (ImGui::GetWindowWidth() - tabsWidth) * 0.5f;
-    ImGui::SameLine((std::max)(ImGui::GetCursorPosX() + 18.0f, tabsStart));
+    (void)tabsWidth;
+    ImGui::SameLine(0.0f, 22.0f);
 
     const char* tabNames[] = { "Aim", "Visuals", "Movement", "Misc", "Config" };
     for (int i = 0; i < IM_ARRAYSIZE(tabNames); ++i)
@@ -1013,9 +1094,7 @@ void Menu::render()
             ImGui::Combo("Material##GunChamsMaterial", &Config::viewmodelChamsMaterial, chamsMaterials, IM_ARRAYSIZE(chamsMaterials));
             ColorEditHexOnly("Gun Color", Config::colViewmodelChams);
         }
-        ImGui::Spacing();
-        ImGui::TextColored(kMenuPurple, "Removals");
-        ImGui::Separator();
+        MenuSubheader("Removals");
         MenuCheckbox("Anti Flash", &Config::antiflash);
         MenuCheckbox("Remove Smoke", &Config::noSmoke);
         EndMenuPanel();
@@ -1054,9 +1133,9 @@ void Menu::render()
         static std::vector<std::string> configList = internal_config::ConfigManager::ListConfigs();
         static int selectedConfigIndex = -1;
 
-        ImGui::PushStyleColor(ImGuiCol_FrameBg, ImVec4(14.0f / 255.0f, 13.0f / 255.0f, 17.0f / 255.0f, 1.0f));
-        ImGui::PushStyleColor(ImGuiCol_FrameBgHovered, ImVec4(28.0f / 255.0f, 26.0f / 255.0f, 34.0f / 255.0f, 1.0f));
-        ImGui::PushStyleColor(ImGuiCol_FrameBgActive, ImVec4(38.0f / 255.0f, 35.0f / 255.0f, 45.0f / 255.0f, 1.0f));
+        ImGui::PushStyleColor(ImGuiCol_FrameBg, ImVec4(5.0f / 255.0f, 5.0f / 255.0f, 8.0f / 255.0f, 1.0f));
+        ImGui::PushStyleColor(ImGuiCol_FrameBgHovered, ImVec4(22.0f / 255.0f, 21.0f / 255.0f, 30.0f / 255.0f, 1.0f));
+        ImGui::PushStyleColor(ImGuiCol_FrameBgActive, ImVec4(32.0f / 255.0f, 28.0f / 255.0f, 46.0f / 255.0f, 1.0f));
         ImGui::InputText("Config Name", configName, IM_ARRAYSIZE(configName));
         ImGui::PopStyleColor(3);
         if (ImGui::Button("Refresh"))
@@ -1077,9 +1156,7 @@ void Menu::render()
             configList = internal_config::ConfigManager::ListConfigs();
         }
 
-        ImGui::Spacing();
-        ImGui::TextColored(kMenuPurple, "Saved Configs");
-        ImGui::Separator();
+        MenuSubheader("Saved Configs");
         for (int i = 0; i < static_cast<int>(configList.size()); ++i)
         {
             if (ImGui::Selectable(configList[i].c_str(), selectedConfigIndex == i))
