@@ -190,6 +190,116 @@ namespace
 }
 
 
+namespace SteamProfile
+{
+	using GetPtrFn = void* (__cdecl*)();
+	using GetPersonaNameFn = const char* (__cdecl*)(void*);
+	using GetSteamIDFn = std::uint64_t(__cdecl*)(void*);
+	using GetAvatarFn = int(__cdecl*)(void*, std::uint64_t);
+	using GetImageSizeFn = bool(__cdecl*)(void*, int, std::uint32_t*, std::uint32_t*);
+	using GetImageRGBAFn = bool(__cdecl*)(void*, int, std::uint8_t*, int);
+
+	ID3D11Device* device = nullptr;
+	ID3D11ShaderResourceView* avatar = nullptr;
+	std::string name = "User";
+	bool nameResolved = false;
+	bool avatarResolved = false;
+	DWORD nextTry = 0;
+
+	template <typename Fn>
+	Fn Export(HMODULE module, const char* symbol)
+	{
+		return reinterpret_cast<Fn>(GetProcAddress(module, symbol));
+	}
+
+	void* FindInterface(HMODULE module, const char* base, int from, int to)
+	{
+		for (int v = to; v >= from; --v)
+		{
+			char symbol[96];
+			std::snprintf(symbol, sizeof(symbol), "%s_v%03d", base, v);
+			if (auto fn = Export<GetPtrFn>(module, symbol))
+			{
+				if (void* iface = fn())
+					return iface;
+			}
+		}
+		return nullptr;
+	}
+
+	void Update()
+	{
+		if (nameResolved && avatarResolved)
+			return;
+		const DWORD now = GetTickCount();
+		if (now < nextTry)
+			return;
+		nextTry = now + 1000; // Steam loads avatars asynchronously, so retry once a second.
+
+		HMODULE steam = GetModuleHandleA("steam_api64.dll");
+		if (!steam)
+			return;
+
+		void* friends = FindInterface(steam, "SteamAPI_SteamFriends", 14, 25);
+		void* user = FindInterface(steam, "SteamAPI_SteamUser", 19, 30);
+		void* utils = FindInterface(steam, "SteamAPI_SteamUtils", 8, 15);
+		if (!friends)
+			return;
+
+		if (!nameResolved)
+		{
+			auto getName = Export<GetPersonaNameFn>(steam, "SteamAPI_ISteamFriends_GetPersonaName");
+			const char* persona = getName ? getName(friends) : nullptr;
+			if (persona && *persona)
+			{
+				name = persona;
+				nameResolved = true;
+			}
+		}
+
+		if (!avatarResolved && user && utils && device)
+		{
+			auto getId = Export<GetSteamIDFn>(steam, "SteamAPI_ISteamUser_GetSteamID");
+			auto getAvatar = Export<GetAvatarFn>(steam, "SteamAPI_ISteamFriends_GetMediumFriendAvatar");
+			auto getSize = Export<GetImageSizeFn>(steam, "SteamAPI_ISteamUtils_GetImageSize");
+			auto getRgba = Export<GetImageRGBAFn>(steam, "SteamAPI_ISteamUtils_GetImageRGBA");
+			if (!getId || !getAvatar || !getSize || !getRgba)
+				return;
+
+			const int handle = getAvatar(friends, getId(user));
+			std::uint32_t w = 0, h = 0;
+			if (handle <= 0 || !getSize(utils, handle, &w, &h) || !w || !h || w > 512 || h > 512)
+				return;
+
+			std::vector<std::uint8_t> pixels(static_cast<std::size_t>(w) * h * 4u);
+			if (!getRgba(utils, handle, pixels.data(), static_cast<int>(pixels.size())))
+				return;
+
+			D3D11_TEXTURE2D_DESC desc{};
+			desc.Width = w;
+			desc.Height = h;
+			desc.MipLevels = 1;
+			desc.ArraySize = 1;
+			desc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
+			desc.SampleDesc.Count = 1;
+			desc.Usage = D3D11_USAGE_DEFAULT;
+			desc.BindFlags = D3D11_BIND_SHADER_RESOURCE;
+			D3D11_SUBRESOURCE_DATA data{};
+			data.pSysMem = pixels.data();
+			data.SysMemPitch = w * 4u;
+
+			ID3D11Texture2D* tex = nullptr;
+			if (SUCCEEDED(device->CreateTexture2D(&desc, &data, &tex)))
+			{
+				if (SUCCEEDED(device->CreateShaderResourceView(tex, nullptr, &avatar)))
+					avatarResolved = true;
+				tex->Release();
+			}
+		}
+	}
+}
+
+
 void ApplyImGuiTheme() {
     ImGui::StyleColorsDark();
 
@@ -681,6 +791,7 @@ void Menu::init(HWND& window, ID3D11Device* pDevice, ID3D11DeviceContext* pConte
 
     ApplyImGuiTheme();
     LoadPreviewModel(pDevice);
+    SteamProfile::device = pDevice;
 
     if (io.Fonts->AddFontFromFileTTF("C:\\Windows\\Fonts\\arial.ttf", 16.0f) == nullptr)
     {
@@ -699,6 +810,23 @@ static void DrawCircleLabel(const char* label, float diameter)
     const ImVec2 textSize = ImGui::CalcTextSize(label);
     drawList->AddText(ImVec2(center.x - textSize.x * 0.5f, center.y - textSize.y * 0.5f),
         IM_COL32(168, 155, 242, 255), label);
+    ImGui::Dummy(ImVec2(diameter, diameter));
+}
+
+static void DrawCircleAvatar(ID3D11ShaderResourceView* texture, const char* fallback, float diameter)
+{
+    if (!texture)
+    {
+        DrawCircleLabel(fallback, diameter);
+        return;
+    }
+    const ImVec2 cursor = ImGui::GetCursorScreenPos();
+    const ImVec2 center(cursor.x + diameter * 0.5f, cursor.y + diameter * 0.5f);
+    ImDrawList* drawList = ImGui::GetWindowDrawList();
+    drawList->AddImageRounded(reinterpret_cast<ImTextureID>(texture), cursor,
+        ImVec2(cursor.x + diameter, cursor.y + diameter), ImVec2(0.0f, 0.0f), ImVec2(1.0f, 1.0f),
+        IM_COL32_WHITE, diameter * 0.5f);
+    drawList->AddCircle(center, diameter * 0.5f, IM_COL32(168, 155, 242, 210), 32, 1.3f);
     ImGui::Dummy(ImVec2(diameter, diameter));
 }
 
@@ -758,14 +886,13 @@ void Menu::render()
         return;
     }
 
-    const float headerHeight = 43.0f;
+    const float headerHeight = 50.0f;
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 3.0f));
     ImGui::BeginChild("TopBar", ImVec2(0.0f, headerHeight), false, ImGuiWindowFlags_NoScrollbar);
     DrawCircleLabel("CM", 34.0f);
 
     const float tabWidths[] = { 58.0f, 78.0f, 94.0f, 62.0f, 72.0f };
     const float tabsWidth = tabWidths[0] + tabWidths[1] + tabWidths[2] + tabWidths[3] + tabWidths[4] + 4.0f * 7.0f;
-    const float profileWidth = 86.0f;
     const float tabsStart = (ImGui::GetWindowWidth() - tabsWidth) * 0.5f;
     ImGui::SameLine((std::max)(ImGui::GetCursorPosX() + 18.0f, tabsStart));
 
@@ -777,13 +904,27 @@ void Menu::render()
             ImGui::SameLine(0.0f, 7.0f);
     }
 
-    const float profileStart = ImGui::GetWindowWidth() - profileWidth - ImGui::GetStyle().WindowPadding.x;
+    SteamProfile::Update();
+    const float avatarSize = 38.0f;
+    const float nameScale = 1.15f;
+    const float maxNameWidth = 140.0f;
+    ImGui::SetWindowFontScale(nameScale);
+    const float textHeight = ImGui::GetTextLineHeight();
+    const float nameWidth = (std::min)(ImGui::CalcTextSize(SteamProfile::name.c_str()).x, maxNameWidth);
+    const float profileWidth = avatarSize + 10.0f + nameWidth;
+    const float profileStart = ImGui::GetWindowWidth() - profileWidth - 18.0f;
     ImGui::SameLine(profileStart);
-    DrawCircleLabel("?", 30.0f);
-    ImGui::SameLine(0.0f, 8.0f);
-    ImGui::SetCursorPosY(ImGui::GetCursorPosY() +
-        (30.0f - ImGui::GetTextLineHeight()) * 0.5f - 3.0f);
-    ImGui::TextColored(kMenuPurple, "User");
+    DrawCircleAvatar(SteamProfile::avatar, "?", avatarSize);
+    const ImVec2 avatarMin = ImGui::GetItemRectMin();
+    const ImVec2 avatarMax = ImGui::GetItemRectMax();
+    ImGui::SetCursorScreenPos(ImVec2(avatarMax.x + 10.0f,
+        (avatarMin.y + avatarMax.y) * 0.5f - textHeight * 0.5f - 1.0f));
+    const ImVec2 nameMin = ImGui::GetCursorScreenPos();
+    ImGui::PushClipRect(ImVec2(nameMin.x, nameMin.y - 20.0f),
+        ImVec2(nameMin.x + maxNameWidth + 6.0f, nameMin.y + textHeight + 20.0f), false);
+    ImGui::TextColored(kMenuPurple, "%s", SteamProfile::name.c_str());
+    ImGui::PopClipRect();
+    ImGui::SetWindowFontScale(1.0f);
     ImGui::EndChild();
     ImGui::PopStyleVar();
 
