@@ -30,6 +30,7 @@
    - Use a DLL injector (e.g., [Extreme Injector](https://github.com/master131/ExtremeInjector/releases)) to inject `Conglomerate.dll` into `cs2.exe`.
 
 3. **Play CS2:**
+   - Add `-allow_third_party_software` to the CS2 launch options ([Tutorial](https://hackvshack.net/threads/how-to-run-cs2-with-launch-arguments-e-g-insecure-or-allow_third_party_software.7013/)).
    - Launch `Counter-Strike 2` and start using Conglomerate.
    - Menu Bind `INS`
 
@@ -37,7 +38,7 @@
 
 ## Showcase
 <p align="center">
-    <img src="images/image.png">
+    <img src="images/image2.png">
   </a>
 </p> 
 
