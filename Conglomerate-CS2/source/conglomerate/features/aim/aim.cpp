@@ -73,12 +73,24 @@ namespace
 
     bool ResolveTraceFunctions(std::uintptr_t& manager, TraceFilterInitFn& initializeFilter, TraceRayFn& traceRay)
     {
-        static const auto managerPattern = M::FindPattern("client", "48 8B 0D ? ? ? ? 48 8D 34 52");
+        static const auto managerPattern = []() -> std::uint8_t*
+        {
+            auto* found = M::FindPattern("client", "48 8B 0D ? ? ? ? 48 8D 34 52");
+            if (!found)
+                found = M::FindPattern("client",
+                    "48 8B 0D ? ? ? ? 48 8B D0 C7 44 24 ? 04 00 00 00 48 C7 44 24 ? 01 30 1C 00");
+            return found;
+        }();
         static const auto filterPattern = M::FindPattern("client",
             "48 89 5C 24 ? 48 89 74 24 ? 57 48 83 EC ? 0F B6 41 ? 33 FF 24");
         static const auto tracePattern = M::FindPattern("client",
             "48 89 54 24 ? 48 89 4C 24 ? 55 53 56 57 41 54 41 56 41 57 48 8D AC 24 ? ? ? ? B8");
         static const auto managerGlobal = reinterpret_cast<std::uintptr_t>(M::abs(managerPattern, 3));
+
+        DebugConsole::once("trigger.trace.resolve",
+            "[scan] Trigger trace: manager_sig=%p filter_sig=%p trace_sig=%p manager_global=%p",
+            static_cast<void*>(managerPattern), static_cast<void*>(filterPattern),
+            static_cast<void*>(tracePattern), reinterpret_cast<void*>(managerGlobal));
 
         if (!managerGlobal || !filterPattern || !tracePattern ||
             !SafeMemory::read(managerGlobal, manager) || !manager)

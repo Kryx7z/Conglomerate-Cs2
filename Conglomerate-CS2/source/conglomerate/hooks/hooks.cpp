@@ -13,6 +13,8 @@
 #include "../../cs2/entity/C_Material/C_Material.h"
 
 #include "../config/config.h"
+#include "../offsets/offsets.h"
+#include "../utils/memory/safe_memory.h"
 #include "../interfaces/interfaces.h"
 #include "../features/aim/aim.h"
 #include "../features/movement/movement.h"
@@ -308,6 +310,18 @@ void __fastcall H::hkRenderSmoke(void* a1, void* a2, int a3, int a4, void* a5, v
 	original(a1, a2, a3, a4, a5, a6);
 }
 void H::Hooks::init() {
+	{
+		const uintptr_t engineBase = reinterpret_cast<uintptr_t>(GetModuleHandleA("engine2.dll"));
+		std::int32_t gameBuild = 0;
+		if (engineBase)
+			SafeMemory::read(engineBase + Offset::dwBuildNumber, gameBuild);
+		if (gameBuild == Offset::kExpectedGameBuild)
+			DebugConsole::logf("[offsets] game build %d matches the offsets in offsets.hpp/buttons.hpp", gameBuild);
+		else
+			DebugConsole::logf("[offsets] WARNING: running game build is %d but offsets are for %d - update offsets.hpp, buttons.hpp and kExpectedGameBuild",
+				gameBuild, Offset::kExpectedGameBuild);
+	}
+
 	auto scan = [](const char* module, const char* pattern) -> uintptr_t {
 		return M::patternScan(module, pattern);
 	};
@@ -367,7 +381,14 @@ void H::Hooks::init() {
 	InstallHook("SetPostprocessVec/NightMode", "engine2", setPostprocessVec, SetPostprocessVec,
 		reinterpret_cast<void*>(&hkSetPostprocessVec));
 	const uintptr_t clientBase = modules.getModule("client");
-	const uintptr_t frameStageNotify = clientBase ? clientBase + 0xB6D440 : 0;
+	uintptr_t frameStageNotify = scan(
+		"client", "48 89 5C 24 ? 48 89 6C 24 ? 57 48 83 EC ? 48 8B F9 33 ED");
+	if (!frameStageNotify)
+		frameStageNotify = scan(
+			"client", "48 89 5C 24 ? 56 48 83 EC ? 8B 05 ? ? ? ? 8D 5A");
+	DebugConsole::logf("[scan] FrameStageNotify: %s at %p (client RVA 0x%llX)",
+		frameStageNotify ? "FOUND" : "MISS", reinterpret_cast<void*>(frameStageNotify),
+		static_cast<unsigned long long>(frameStageNotify && clientBase ? frameStageNotify - clientBase : 0));
 	InstallHook("FrameStageNotify", "client", frameStageNotify, FrameStageNotify,
 		reinterpret_cast<void*>(&hkFrameStageNotify));
 	// DrawArray is DrawAggeregateObject (SDK spelling) in scenesystem.dll.

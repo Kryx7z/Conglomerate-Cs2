@@ -251,6 +251,7 @@
     <ClInclude Include="source\conglomerate\menu\hud.h" />
     <ClInclude Include="source\conglomerate\offsets\offsets.h" />
     <ClInclude Include="source\conglomerate\offsets\buttons.hpp" />
+    <ClInclude Include="source\conglomerate\offsets\offsets.hpp" />
     <ClInclude Include="source\conglomerate\renderer\icons.h" />
     <ClInclude Include="source\conglomerate\utils\fnv1a\fnv1a.h" />
     <ClInclude Include="source\conglomerate\utils\math\math.h" />

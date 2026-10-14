@@ -1,8 +1,19 @@
 #pragma once
 #include <cstddef>
 
+#include "offsets.hpp"
+#include "buttons.hpp"
+
+// Single place that records which game build the RVAs in offsets.hpp /
+// buttons.hpp were dumped from. Update both files (cs2-dumper output) and this
+// number together when the game updates. The runtime logs a warning when the
+// running game build differs.
 namespace Offset {
-	constexpr std::ptrdiff_t dwLocalPlayerPawn = 0x255C3C8;
+	constexpr int kExpectedGameBuild = 14191;
+
+	constexpr std::ptrdiff_t dwLocalPlayerPawn = cs2_dumper::offsets::client_dll::dwLocalPlayerPawn;
+	constexpr std::ptrdiff_t dwViewMatrix = cs2_dumper::offsets::client_dll::dwViewMatrix;
+	constexpr std::ptrdiff_t dwBuildNumber = cs2_dumper::offsets::engine2_dll::dwBuildNumber; // engine2.dll
 
 	namespace C_BasePlayerPawn {
 		constexpr std::ptrdiff_t m_vOldOrigin = 0x14A4;

@@ -1,3 +1,4 @@
+#include "../../offsets/offsets.h"
 #include "visuals.h"
 #include <algorithm>
 #include <array>
@@ -176,7 +177,7 @@ namespace
 void Visuals::init() {
     const uintptr_t clientBase = reinterpret_cast<uintptr_t>(GetModuleHandleA("client.dll"));
     viewMatrix.viewMatrix = clientBase
-        ? reinterpret_cast<viewmatrix_t*>(clientBase + 0x2561CD0)
+        ? reinterpret_cast<viewmatrix_t*>(clientBase + Offset::dwViewMatrix)
         : nullptr;
     DebugConsole::logf("[offset] view matrix: client=%p target=%p",
         reinterpret_cast<void*>(clientBase), static_cast<void*>(viewMatrix.viewMatrix));
