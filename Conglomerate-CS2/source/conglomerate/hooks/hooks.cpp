@@ -18,6 +18,7 @@
 #include "../interfaces/interfaces.h"
 #include "../features/aim/aim.h"
 #include "../features/movement/movement.h"
+#include "../features/skins/skins.h"
 #include "../menu/menu_input_lock.h"
 #include "../menu/menu.h"
 #include "../utils/memory/seh_diagnostics.h"
@@ -25,6 +26,8 @@
 
 #include <cstdio>
 #include <atomic>
+#include <cstddef>
+#include <vector>
 
 static bool IsExecutableAddress(const void* address)
 {
@@ -77,6 +80,105 @@ static bool ReadMemorySafe(std::uintptr_t address, void* output, std::size_t siz
 	SIZE_T bytesRead = 0;
 	return ReadProcessMemory(GetCurrentProcess(), reinterpret_cast<const void*>(address),
 		output, size, &bytesRead) != FALSE && bytesRead == size;
+}
+
+struct ExecutablePatternScanResult
+{
+	std::uintptr_t address = 0;
+	std::size_t matchCount = 0;
+	bool complete = false;
+};
+
+static ExecutablePatternScanResult FindUniqueExecutablePattern(
+	std::uintptr_t moduleBase, const unsigned char* signature,
+	const bool* signatureMask, std::size_t signatureSize)
+{
+	ExecutablePatternScanResult result{};
+	if (!moduleBase || !signature || !signatureMask || !signatureSize)
+		return result;
+
+	IMAGE_DOS_HEADER dosHeader{};
+	if (!ReadMemorySafe(moduleBase, &dosHeader, sizeof(dosHeader)) ||
+		dosHeader.e_magic != IMAGE_DOS_SIGNATURE || dosHeader.e_lfanew <= 0)
+		return result;
+
+	IMAGE_NT_HEADERS64 ntHeaders{};
+	const std::uintptr_t ntAddress = moduleBase + static_cast<std::uintptr_t>(dosHeader.e_lfanew);
+	if (!ReadMemorySafe(ntAddress, &ntHeaders, sizeof(ntHeaders)) ||
+		ntHeaders.Signature != IMAGE_NT_SIGNATURE ||
+		ntHeaders.OptionalHeader.Magic != IMAGE_NT_OPTIONAL_HDR64_MAGIC ||
+		!ntHeaders.FileHeader.NumberOfSections || ntHeaders.FileHeader.NumberOfSections > 96 ||
+		ntHeaders.FileHeader.SizeOfOptionalHeader < sizeof(ntHeaders.OptionalHeader))
+		return result;
+
+	const std::size_t imageSize = ntHeaders.OptionalHeader.SizeOfImage;
+	const std::size_t sectionTableOffset = static_cast<std::size_t>(dosHeader.e_lfanew) +
+		offsetof(IMAGE_NT_HEADERS64, OptionalHeader) + ntHeaders.FileHeader.SizeOfOptionalHeader;
+	const std::size_t sectionTableSize = ntHeaders.FileHeader.NumberOfSections * sizeof(IMAGE_SECTION_HEADER);
+	if (!imageSize || sectionTableOffset > imageSize || sectionTableSize > imageSize - sectionTableOffset)
+		return result;
+	const std::uintptr_t sectionTable = moduleBase + sectionTableOffset;
+	result.complete = true;
+
+	for (std::size_t sectionIndex = 0; sectionIndex < ntHeaders.FileHeader.NumberOfSections; ++sectionIndex)
+	{
+		IMAGE_SECTION_HEADER section{};
+		const std::uintptr_t sectionAddress = sectionTable + sectionIndex * sizeof(section);
+		if (!ReadMemorySafe(sectionAddress, &section, sizeof(section)))
+		{
+			result.complete = false;
+			break;
+		}
+		if (!(section.Characteristics & IMAGE_SCN_MEM_EXECUTE))
+			continue;
+
+		const std::size_t sectionSize = section.Misc.VirtualSize;
+		if (sectionSize < signatureSize)
+			continue;
+		if (section.VirtualAddress >= imageSize || sectionSize > imageSize - section.VirtualAddress)
+		{
+			result.complete = false;
+			break;
+		}
+
+		std::vector<unsigned char> sectionBytes;
+		try
+		{
+			sectionBytes.resize(sectionSize);
+		}
+		catch (...)
+		{
+			result.complete = false;
+			break;
+		}
+		if (!ReadMemorySafe(moduleBase + section.VirtualAddress, sectionBytes.data(), sectionBytes.size()))
+		{
+			result.complete = false;
+			break;
+		}
+
+		for (std::size_t offset = 0; offset <= sectionSize - signatureSize; ++offset)
+		{
+			bool matches = true;
+			for (std::size_t byteIndex = 0; byteIndex < signatureSize; ++byteIndex)
+			{
+				if (signatureMask[byteIndex] &&
+					sectionBytes[offset + byteIndex] != signature[byteIndex])
+				{
+					matches = false;
+					break;
+				}
+			}
+			if (!matches)
+				continue;
+
+			if (!result.matchCount)
+				result.address = moduleBase + section.VirtualAddress + offset;
+			++result.matchCount;
+		}
+	}
+
+	return result;
 }
 
 static void SuppressInputSafe(void* input)
@@ -187,7 +289,28 @@ static bool RefreshEspCacheSafe()
 
 static void hkFrameStageNotify_impl(void* a1, int stage)
 {
+	if (stage == 7 && H::oGetLocalPlayer)
+	{
+		__try
+		{
+			Skins::onFrameStage(stage, H::oGetLocalPlayer(0));
+		}
+		__except (SehDiagnostics::handle("hook.frame_stage.skins_stage7"))
+		{
+		}
+	}
+
 	H::FrameStageNotify.GetOriginal()(a1, stage);
+	if (stage == 7 && H::oGetLocalPlayer)
+	{
+		__try
+		{
+			Skins::onFrameStagePost(stage, H::oGetLocalPlayer(0));
+		}
+		__except (SehDiagnostics::handle("hook.frame_stage.skins_post_stage7"))
+		{
+		}
+	}
 	static std::atomic<std::uint32_t> observedStages{};
 	if (stage >= 0 && stage < 32)
 	{
@@ -214,6 +337,32 @@ static void hkFrameStageNotify_impl(void* a1, int stage)
 	if (stage != 12)
 		return;
 	DebugConsole::once("frame_stage_12", "[runtime] FrameStageNotify reached stage 12");
+}
+
+std::uintptr_t __fastcall H::hkGetItemInLoadout(std::uintptr_t manager, std::uint32_t team,
+	std::uint32_t loadoutSlot)
+{
+	const auto original = H::GetItemInLoadoutHook.GetOriginal();
+	if (!original) {
+		DebugConsole::rateLimited("skins.loadout_original_missing",
+			"[skins] GetItemInLoadout original function is unavailable");
+		return 0;
+	}
+
+	const std::uintptr_t itemView = original(manager, team, loadoutSlot);
+	static std::atomic<std::uint64_t> callCount{};
+	const std::uint64_t calls = callCount.fetch_add(1, std::memory_order_relaxed) + 1;
+	DebugConsole::rateLimited("skins.loadout_hook_calls",
+		"[skins] GetItemInLoadout calls=%llu view=0x%llX team=%u slot=%u",
+		static_cast<unsigned long long>(calls), static_cast<unsigned long long>(itemView), team, loadoutSlot);
+	if (itemView) {
+		__try {
+			Skins::onItemInLoadout(itemView, team, loadoutSlot);
+		}
+		__except (SehDiagnostics::handle("hook.get_item_in_loadout.skins")) {
+		}
+	}
+	return itemView;
 }
 
 void __fastcall H::hkFrameStageNotify(void* a1, int stage)
@@ -325,6 +474,36 @@ void H::Hooks::init() {
 	auto scan = [](const char* module, const char* pattern) -> uintptr_t {
 		return M::patternScan(module, pattern);
 	};
+
+	const uintptr_t clientBaseForLoadout = modules.getModule("client");
+	constexpr uintptr_t expectedGetItemInLoadoutRva = 0x83CB10; // Stale hint; the signature is authoritative.
+	constexpr unsigned char getItemInLoadoutSignature[] = {
+		0x40, 0x55, 0x48, 0x83, 0xEC, 0x00, 0x49, 0x63, 0xE8
+	};
+	constexpr bool getItemInLoadoutSignatureMask[] = {
+		true, true, true, true, true, false, true, true, true
+	};
+	const ExecutablePatternScanResult loadoutPattern = FindUniqueExecutablePattern(
+		clientBaseForLoadout, getItemInLoadoutSignature, getItemInLoadoutSignatureMask,
+		sizeof(getItemInLoadoutSignature));
+	const bool uniqueLoadoutTarget = loadoutPattern.complete && loadoutPattern.matchCount == 1 &&
+		IsExecutableAddress(reinterpret_cast<void*>(loadoutPattern.address));
+	DebugConsole::logf("[hook] GetItemInLoadout/skins: executable signature matches=%llu scan_complete=%d candidate=%p candidate_RVA=0x%llX supplied_RVA=0x%llX",
+		static_cast<unsigned long long>(loadoutPattern.matchCount), loadoutPattern.complete ? 1 : 0,
+		reinterpret_cast<void*>(loadoutPattern.address),
+		static_cast<unsigned long long>(loadoutPattern.address && clientBaseForLoadout
+			? loadoutPattern.address - clientBaseForLoadout : 0),
+		static_cast<unsigned long long>(expectedGetItemInLoadoutRva));
+
+	if (uniqueLoadoutTarget) {
+		if (loadoutPattern.address - clientBaseForLoadout != expectedGetItemInLoadoutRva)
+			DebugConsole::logf("[hook] GetItemInLoadout/skins: supplied RVA does not match; using unique executable signature at client+0x%llX",
+				static_cast<unsigned long long>(loadoutPattern.address - clientBaseForLoadout));
+		InstallHook("GetItemInLoadout/skins", "client", loadoutPattern.address, GetItemInLoadoutHook,
+			reinterpret_cast<void*>(&hkGetItemInLoadout));
+	} else {
+		DebugConsole::logf("[hook] GetItemInLoadout/skins: not installed; need exactly one complete executable-section signature match");
+	}
 
 	if (uintptr_t p = scan("client", "48 8B 81 ? ? ? ? 85 D2 78 ? 48 83 FA ? 73 ? F3 0F 10 84 90 ? ? ? ? C3 F3 0F 10 80 ? ? ? ? C3 CC CC CC CC"))
 	{

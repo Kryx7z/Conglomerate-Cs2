@@ -183,6 +183,8 @@
     <ClCompile Include="source\conglomerate\features\visuals\antiflash\antiflash.cpp" />
     <ClCompile Include="source\conglomerate\features\visuals\fov\fov.cpp" />
     <ClCompile Include="source\conglomerate\features\movement\movement.cpp" />
+    <ClCompile Include="source\conglomerate\features\skins\skins_catalog.cpp" />
+    <ClCompile Include="source\conglomerate\features\skins\skins.cpp" />
     <ClCompile Include="source\conglomerate\menu\menu_input_lock.cpp" />
     <ClCompile Include="source\conglomerate\features\spectatorlist\spectatorlist.cpp" />
     <ClCompile Include="source\conglomerate\interfaces\CGameEntitySystem\CGameEntitySystem.cpp" />
@@ -238,6 +240,7 @@
     <ClInclude Include="source\conglomerate\features\aim\aim.h" />
     <ClInclude Include="source\conglomerate\features\chams\chams.h" />
     <ClInclude Include="source\conglomerate\features\movement\movement.h" />
+    <ClInclude Include="source\conglomerate\features\skins\skins_catalog.h" />
     <ClInclude Include="source\conglomerate\menu\menu_input_lock.h" />
     <ClInclude Include="source\conglomerate\features\spectatorlist\spectatorlist.h" />
     <ClInclude Include="source\conglomerate\interfaces\CGameEntitySystem\CGameEntitySystem.h" />

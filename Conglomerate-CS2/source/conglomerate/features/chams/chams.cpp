@@ -2,6 +2,7 @@
 #include <array>
 #include <limits>
 #include "chams.h"
+#include "../skins/skins.h"
 #include "../../hooks/hooks.h"
 #include "../../config/config.h"
 #include "../../../../external/imgui/imgui.h"
@@ -470,6 +471,9 @@ void __fastcall chams::generatePrimitivesHook(void* thisptr, void* sceneObject, 
                 "[runtime] GeneratePrimitives could not resolve scene owner handle_index=%d", ownerHandle.index());
     }
 
+    const auto ownerKind = owner ? getSceneOwnerKind(owner) : SceneOwnerKind::UNKNOWN;
+    if (owner && ownerKind == SceneOwnerKind::VIEWMODEL)
+        Skins::onHudModelRendered(owner);
     const auto target = owner ? chams::GetTargetType(owner, ownerHandle) : ChamsEntity::INVALID;
     if (owner && target == ChamsEntity::INVALID)
     {

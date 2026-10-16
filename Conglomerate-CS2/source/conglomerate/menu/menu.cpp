@@ -1,5 +1,6 @@
 #include "menu.h"
 #include "../config/config.h"
+#include "../features/skins/skins.h"
 #include "../interfaces/interfaces.h"
 #include "../utils/debug_console.h"
 #include "../utils/memory/vfunc/vfunc.h"
@@ -972,12 +973,12 @@ void Menu::render()
     ImGui::BeginChild("TopBar", ImVec2(0.0f, headerHeight), false, ImGuiWindowFlags_NoScrollbar);
     DrawClusterLogo(34.0f);
 
-    const float tabWidths[] = { 58.0f, 78.0f, 94.0f, 62.0f, 72.0f };
-    const float tabsWidth = tabWidths[0] + tabWidths[1] + tabWidths[2] + tabWidths[3] + tabWidths[4] + 4.0f * 7.0f;
+    const float tabWidths[] = { 58.0f, 78.0f, 94.0f, 62.0f, 68.0f, 72.0f };
+    const float tabsWidth = tabWidths[0] + tabWidths[1] + tabWidths[2] + tabWidths[3] + tabWidths[4] + tabWidths[5] + 5.0f * 7.0f;
     (void)tabsWidth;
     ImGui::SameLine(0.0f, 22.0f);
 
-    const char* tabNames[] = { "Aim", "Visuals", "Movement", "Misc", "Config" };
+    const char* tabNames[] = { "Aim", "Visuals", "Movement", "Misc", "Skins", "Config" };
     for (int i = 0; i < IM_ARRAYSIZE(tabNames); ++i)
     {
         DrawNamedTab(tabNames[i], i, activeTab, tabWidths[i]);
@@ -1127,6 +1128,11 @@ void Menu::render()
         break;
     }
     case 4:
+    {
+        Skins::render();
+        break;
+    }
+    case 5:
     {
         BeginMenuPanel("ConfigPanel", "Config", ImVec2(0.0f, 0.0f));
         static char configName[128] = "";

@@ -25,6 +25,7 @@ namespace H {
 	void applyNightPrimitiveColor(void* batch, int batchCount);
 	void updateSmoke();
 	void __fastcall hkFrameStageNotify(void* a1, int stage);
+	std::uintptr_t __fastcall hkGetItemInLoadout(std::uintptr_t manager, std::uint32_t team, std::uint32_t loadoutSlot);
 	void __fastcall hkCreateMove(void* input, unsigned int slot, std::int64_t active);
 	void __fastcall hkHandleViewAngles(void* input, int slot);
 	void* __fastcall hkLevelInit(void* pClientModeShared, const char* szNewMap);
@@ -41,6 +42,8 @@ namespace H {
 	inline CInlineHookObj<decltype(&hkChamsObject)> DrawArray = { };
 	inline CInlineHookObj<void(__fastcall*)(void*, void*, void*, void*)> GeneratePrimitives = { };
 	inline CInlineHookObj<decltype(&hkFrameStageNotify)> FrameStageNotify = { };
+	using GetItemInLoadoutFn = std::uintptr_t(__fastcall*)(std::uintptr_t, std::uint32_t, std::uint32_t);
+	inline CInlineHookObj<GetItemInLoadoutFn> GetItemInLoadoutHook = { };
 	inline CInlineHookObj<decltype(&hkCreateMove)> CreateMove = { };
 	inline CInlineHookObj<decltype(&hkHandleViewAngles)> HandleViewAngles = { };
 	inline CInlineHookObj<decltype(&hkUpdateSceneObject)> UpdateWallsObject = { };

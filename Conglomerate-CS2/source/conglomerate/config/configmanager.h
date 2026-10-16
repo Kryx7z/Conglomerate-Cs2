@@ -8,6 +8,7 @@
 #include <cstdlib>
 
 #include "config.h"
+#include "../features/skins/skins.h"
 #include "../keybinds/keybinds.h"
 #include "../../../external/json/json.hpp"
 
@@ -86,6 +87,7 @@ namespace internal_config
         static void Save(const std::string& configName)
         {
             nlohmann::json j;
+			j["skins"] = Skins::saveConfig();
             j["esp"] = Config::esp;
             j["showHealth"] = Config::showHealth;
             j["teamCheck"] = Config::teamCheck;
@@ -391,6 +393,9 @@ namespace internal_config
                 Config::fovCircleColor.z = arr[2].get<float>();
                 Config::fovCircleColor.w = arr[3].get<float>();
             }
+
+			if (j.contains("skins") && j["skins"].is_object())
+				Skins::loadConfig(j["skins"]);
 
             ifs.close();
         }

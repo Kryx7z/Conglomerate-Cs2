@@ -8,6 +8,6 @@ public:
 	//Vector_t WorldToScreen(const Vector_t& position) const;
 	bool WorldToScreen(const Vector_t& position, Vector_t& out) const;
 	
-	viewmatrix_t* viewMatrix;
+	viewmatrix_t* viewMatrix{};
 
 };

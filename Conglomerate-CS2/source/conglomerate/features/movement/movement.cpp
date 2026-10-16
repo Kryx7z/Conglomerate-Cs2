@@ -10,6 +10,8 @@
 #include "../../utils/debug_console.h"
 #include "../../config/config.h"
 
+extern HWND window;
+
 namespace
 {
 	constexpr std::uintptr_t jumpButtonOffset = cs2_dumper::buttons::jump;
@@ -17,6 +19,7 @@ namespace
 	constexpr std::int32_t jumpReleased = 256;
 	bool jumpInputPressed = false;
 	bool jumpStateInitialized = false;
+	std::uintptr_t trackedPawn = 0;
 
 	bool writeJumpState(std::int32_t state)
 	{
@@ -49,10 +52,20 @@ namespace
 
 void Movement::applyBunnyHopInput(void* localPawn)
 {
-	if (!Config::bunnyHop || !localPawn)
+	if (!Config::bunnyHop || !localPawn || !window || GetForegroundWindow() != window)
 	{
 		releaseJumpInput();
 		return;
+	}
+
+	const auto pawn = reinterpret_cast<std::uintptr_t>(localPawn);
+	if (trackedPawn != pawn)
+	{
+		releaseJumpInput();
+		trackedPawn = pawn;
+		jumpInputPressed = false;
+		jumpStateInitialized = false;
+		DebugConsole::logf("[movement] Bunny Hop pawn changed; input state reset (pawn=%p)", localPawn);
 	}
 
 	std::uint32_t flagsOffset = 0;
@@ -63,7 +76,6 @@ void Movement::applyBunnyHopInput(void* localPawn)
 		return;
 	}
 
-	const auto pawn = reinterpret_cast<std::uintptr_t>(localPawn);
 	std::uint32_t flags = 0;
 	std::uint8_t moveType = 0;
 	if (!SafeMemory::read(pawn + flagsOffset, flags) ||
@@ -85,16 +97,15 @@ void Movement::applyBunnyHopInput(void* localPawn)
 	if (jumpStateInitialized && shouldPressJump == jumpInputPressed)
 		return;
 	if (!writeJumpState(shouldPressJump ? jumpPressed : jumpReleased))
+	{
+		DebugConsole::rateLimited("movement.bhop.write_failed",
+			"[movement] Bunny Hop could not write jump state (held=%d grounded=%d flags=0x%X moveType=%u)",
+			spaceHeld ? 1 : 0, onGround ? 1 : 0, flags, static_cast<unsigned int>(moveType));
 		return;
+	}
 	jumpInputPressed = shouldPressJump;
 	jumpStateInitialized = true;
-
-	if (shouldPressJump)
-		DebugConsole::once("movement.bhop.jump_pressed",
-			"[runtime] Bunny Hop wrote jump press to client.dll+0x%llX",
-			static_cast<unsigned long long>(jumpButtonOffset));
-	else
-		DebugConsole::once("movement.bhop.jump_released",
-			"[runtime] Bunny Hop wrote jump release to client.dll+0x%llX",
-			static_cast<unsigned long long>(jumpButtonOffset));
+	DebugConsole::logf("[movement] Bunny Hop jump %s (held=%d grounded=%d flags=0x%X moveType=%u)",
+		shouldPressJump ? "pressed" : "released", spaceHeld ? 1 : 0,
+		onGround ? 1 : 0, flags, static_cast<unsigned int>(moveType));
 }

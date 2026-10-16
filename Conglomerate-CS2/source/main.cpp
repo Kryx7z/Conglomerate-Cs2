@@ -70,7 +70,7 @@ static LONG WINAPI LogUnhandledException(EXCEPTION_POINTERS* exceptionInfo)
 	{
 		DebugConsole::logf("[fatal] unhandled exception (no exception record)");
 	}
-	if (g_previousUnhandledExceptionFilter && g_previousUnhandledExceptionFilter != &LogUnhandledException)
+	if (exceptionInfo && g_previousUnhandledExceptionFilter && g_previousUnhandledExceptionFilter != &LogUnhandledException)
 		return g_previousUnhandledExceptionFilter(exceptionInfo);
 	return EXCEPTION_CONTINUE_SEARCH;
 }

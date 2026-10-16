@@ -1,3 +1,5 @@
 #include <windows.h>
 
 101 RCDATA "source\\conglomerate\\menu\\assets\\preview_model.png"
+102 RCDATA "source\\conglomerate\\features\\skins\\data\\skins.json"
+103 RCDATA "source\\conglomerate\\features\\skins\\data\\agents.json"
