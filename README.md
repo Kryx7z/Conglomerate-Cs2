@@ -38,7 +38,7 @@
 
 ## Showcase
 <p align="center">
-    <img src="images/image3.png">
+    <img src="images/image.png">
   </a>
 </p> 
 
