@@ -36,6 +36,19 @@
 
 ---
 
+## FAQ
+
+**Is this detected?**
+   - Yes. Due to Conglomerate being open source and using detected methods for hooking, it is detected..
+
+**Why doesn’t [FEATURE] work?**
+   - The source code is probably outdated, check patterns and offsets used by that feature and update them using [cs2 sdk](https://cs2-sdk.com) and [a2x dumper](https://github.com/a2x/cs2-dumper).
+
+**Can you help me with making my own cheat or fixing it?**
+   - No.
+
+
+
 ## Showcase
 <p align="center">
     <img src="images/image.png">
