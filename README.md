@@ -39,7 +39,7 @@
 ## FAQ
 
 **Is this detected?**
-   - Yes. Due to Conglomerate being open source and using detected methods for hooking, it is detected..
+   - Yes. Due to Conglomerate being open source and using detected methods for hooking, it is detected.
 
 **Why doesn’t [FEATURE] work?**
    - The source code is probably outdated, check patterns and offsets used by that feature and update them using [cs2 sdk](https://cs2-sdk.com) and [a2x dumper](https://github.com/a2x/cs2-dumper).
