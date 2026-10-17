@@ -27,6 +27,12 @@ std::vector<PlayerCache> cached_players;
 
 namespace
 {
+    void ClearCachedPlayers()
+    {
+        cached_players.clear();
+        cached_local.reset();
+    }
+
     enum class BoneID : int
     {
         PELVIS = 1, SPINE1 = 3, SPINE2 = 4, NECK = 6, HEAD = 7,
@@ -185,8 +191,16 @@ void Visuals::init() {
 
 void Esp::cache()
 {
+    if (!I::EngineClient || !I::EngineClient->valid())
+    {
+        ClearCachedPlayers();
+        DebugConsole::rateLimited("esp.cache.out_of_game", "[runtime] ESP cache cleared: client is not in an active game");
+        return;
+    }
+
     if (!I::GameEntity || !I::GameEntity->Instance)
     {
+        ClearCachedPlayers();
         DebugConsole::rateLimited("esp.entity.invalid", "[runtime] ESP cache waiting: entity system unavailable");
         return;
     }
@@ -272,6 +286,12 @@ void Esp::cache()
 }
 
 void Visuals::esp() {
+    if (!I::EngineClient || !I::EngineClient->valid())
+    {
+        ClearCachedPlayers();
+        return;
+    }
+
     // Only proceed if at least one ESP component is enabled
     if (!Config::esp && !Config::showHealth && !Config::espFill && !Config::showNameTags &&
         !Config::flags && !Config::skeleton) {
@@ -282,12 +302,14 @@ void Visuals::esp() {
     //@better example of getting local pawn
     if (!H::oGetLocalPlayer)
     {
+        ClearCachedPlayers();
         DebugConsole::rateLimited("esp.local_fn.missing", "[runtime] ESP skipped: GetLocalPawn function pointer is null");
         return;
     }
 
     C_CSPlayerPawn* localPawn = H::oGetLocalPlayer(0);
     if (!localPawn) {
+        ClearCachedPlayers();
         DebugConsole::rateLimited("esp.local.null", "[runtime] ESP skipped: GetLocalPawn returned null");
         return;
     }

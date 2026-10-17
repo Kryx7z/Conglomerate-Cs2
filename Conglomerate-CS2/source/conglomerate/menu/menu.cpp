@@ -839,7 +839,8 @@ void Menu::init(HWND& window, ID3D11Device* pDevice, ID3D11DeviceContext* pConte
     LoadPreviewModel(pDevice);
     SteamProfile::device = pDevice;
 
-    if (io.Fonts->AddFontFromFileTTF("C:\\Windows\\Fonts\\arial.ttf", 16.0f) == nullptr)
+    if (io.Fonts->AddFontFromFileTTF(
+        "C:\\Windows\\Fonts\\arial.ttf", 16.0f, nullptr, io.Fonts->GetGlyphRangesCyrillic()) == nullptr)
     {
         io.Fonts->AddFontDefault();
     }
@@ -1029,6 +1030,7 @@ void Menu::render()
         ImGui::TextUnformatted("Activation key");
         keybind.menuButton(Config::aimbot);
         MenuCheckbox("Team Check", &Config::team_check);
+        MenuCheckbox("Visible Check", &Config::aimbotVisibleCheck);
         MenuSliderFloat("FOV", &Config::aimbot_fov, 0.0f, 90.0f);
         MenuCheckbox("Draw FOV Circle", &Config::fov_circle);
         if (Config::fov_circle)
@@ -1075,7 +1077,7 @@ void Menu::render()
 
         ImGui::Spacing();
         BeginMenuPanel("ChamsPanel", "Chams", ImVec2(0.0f, 0.0f));
-        const char* chamsMaterials[] = { "Flat", "Illuminate", "Glow" };
+        const char* chamsMaterials[] = { "Flat", "Illuminate", "Glow", "Metallic", "Dark Matter", "Data" };
         MenuCheckbox("Visible Chams", &Config::enemyChams);
         ImGui::Combo("Material##VisibleChamsMaterial", &Config::chamsMaterial, chamsMaterials, IM_ARRAYSIZE(chamsMaterials));
         if (Config::enemyChams)
@@ -1114,17 +1116,50 @@ void Menu::render()
     }
     case 3:
     {
-        BeginMenuPanel("MiscPanel", "Misc", ImVec2(0.0f, 0.0f));
+        ImGui::BeginChild("MiscColumns", ImVec2(contentSize.x, 0.0f), false);
+        const float columnGap = ImGui::GetStyle().ItemSpacing.x;
+        const float columnWidth = (ImGui::GetContentRegionAvail().x - columnGap) * 0.5f;
+        BeginMenuPanel("MiscPanel", "Misc", ImVec2(columnWidth, 0.0f));
         MenuCheckbox("Watermark", &Config::watermark);
         MenuCheckbox("Spectator List", &Config::spectatorList);
         ImGui::Spacing();
         MenuCheckbox("Night Mode", &Config::Night);
         if (Config::Night)
+        {
             ColorEditHexOnly("Night Color", Config::NightColor);
+            ColorEditHexOnly("Sky Color", Config::NightSkyColor);
+        }
         MenuCheckbox("Custom FOV", &Config::fovEnabled);
         if (Config::fovEnabled)
             MenuSliderFloat("FOV Value##FovSlider", &Config::fov, 20.0f, 160.0f, "%1.0f");
         EndMenuPanel();
+
+        ImGui::SameLine(0.0f, columnGap);
+        BeginMenuPanel("WeatherPanel", "Weather", ImVec2(0.0f, 0.0f));
+        MenuCheckbox("Rain", &Config::weatherRainEnabled);
+        if (Config::weatherRainEnabled)
+        {
+            MenuSliderFloat("Rain Intensity", &Config::weatherRainIntensity, 0.1f, 2.0f, "%.2f");
+            ColorEditHexOnly("Rain Color", Config::weatherRainColor);
+        }
+        MenuCheckbox("Wind", &Config::weatherWindEnabled);
+        if (Config::weatherWindEnabled)
+        {
+            MenuSliderFloat("Wind Strength", &Config::weatherWindStrength, 0.0f, 5.0f, "%.1f");
+            MenuSliderFloat("Wind Direction", &Config::weatherWindDirection, 0.0f, 360.0f, "%.0f");
+            MenuSliderFloat("Wind Turbulence", &Config::weatherWindTurbulence, 0.0f, 5.0f, "%.1f");
+        }
+        ImGui::Spacing();
+        MenuCheckbox("Fog", &Config::weatherFogEnabled);
+        if (Config::weatherFogEnabled)
+        {
+            MenuSliderFloat("Fog Density", &Config::weatherFogDensity, 0.0f, 1.0f, "%.2f");
+            MenuSliderFloat("Fog Anisotropy", &Config::weatherFogAnisotropy, 0.0f, 1.0f, "%.2f");
+            MenuSliderFloat("Fog Distance", &Config::weatherFogDistance, 500.0f, 20000.0f, "%.0f");
+            ColorEditHexOnly("Fog Color", Config::weatherFogColor);
+        }
+        EndMenuPanel();
+        ImGui::EndChild();
         break;
     }
     case 4:

@@ -15,6 +15,19 @@ namespace Config {
 
 	bool Night = false;
 	ImVec4 NightColor = ImVec4(125.0f / 255.0f, 125.0f / 255.0f, 125.0f / 255.0f, 1.0f); // #7D7D7DFF
+	ImVec4 NightSkyColor = ImVec4(12.0f / 255.0f, 24.0f / 255.0f, 55.0f / 255.0f, 1.0f);
+	bool weatherRainEnabled = false;
+	float weatherRainIntensity = 1.0f;
+	ImVec4 weatherRainColor = ImVec4(1.0f, 1.0f, 1.0f, 1.0f);
+	bool weatherWindEnabled = false;
+	float weatherWindStrength = 3.0f;
+	float weatherWindDirection = 0.0f;
+	float weatherWindTurbulence = 1.0f;
+	bool weatherFogEnabled = false;
+	float weatherFogDensity = 0.9f;
+	float weatherFogAnisotropy = 0.0f;
+	float weatherFogDistance = 1000.0f;
+	ImVec4 weatherFogColor = ImVec4(1.0f, 1.0f, 1.0f, 1.0f);
 	bool bunnyHop = false;
 
 	bool enemyChamsInvisible = false;
@@ -52,6 +65,7 @@ namespace Config {
 
 
 	bool aimbot = 0;
+	bool aimbotVisibleCheck = true;
 	bool triggerbot = false;
 	bool triggerbot_team_check = false;
 	float aimbot_fov = 0;

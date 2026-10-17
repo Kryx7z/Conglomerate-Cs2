@@ -437,6 +437,7 @@ namespace {
 	}
 
 	using SetItemAttributeFn = void(__fastcall*)(void*, const char*, float);
+	using AddStatTrakEntityFn = void(__fastcall*)(void*, void*);
 	using ChangeModelFn = void(__fastcall*)(void*, const char*);
 	using GetViewModelFn = void(__fastcall*)(void*);
 	using GetModelPathFn = const char*(__fastcall*)(void*);
@@ -448,6 +449,7 @@ namespace {
 	using InvalidateItemDescriptionFn = void(__fastcall*)(void*);
 	using SetBodygroupFn = void(__fastcall*)(void*, int, uint32_t);
 	SetItemAttributeFn g_setItemAttribute = nullptr;
+	AddStatTrakEntityFn g_addStatTrakEntity = nullptr;
 	ChangeModelFn g_changeModel = nullptr;
 	GetViewModelFn g_getViewModel = nullptr;
 	GetModelPathFn g_getModelPath = nullptr;
@@ -763,6 +765,9 @@ namespace {
 		if (!g_setItemAttribute)
 			g_setItemAttribute = reinterpret_cast<SetItemAttributeFn>(M::patternScan("client",
 				"40 53 48 83 EC 20 48 8B D9 48 81 C1 08 02 00 00"));
+		if (!g_addStatTrakEntity)
+			g_addStatTrakEntity = reinterpret_cast<AddStatTrakEntityFn>(M::patternScan("client",
+				"48 89 5C 24 ? 55 56 57 41 54 41 55 41 56 41 57 48 8D 6C 24 ? 48 81 EC 40 01 00 00 48 8B DA"));
 		if (!g_changeModel) {
 			// Resolve the model setter from its call site; the rel32 target
 			// is the function taking (entity, modelPath).
@@ -803,8 +808,9 @@ namespace {
 			g_setBodygroup = reinterpret_cast<SetBodygroupFn>(M::patternScan("client",
 				"85 D2 0F 88 ? ? ? ? 55 56 57 48 83 EC ? 41 8B E8 4C 89 B4 24 ? ? ? ? 8B FA 48 8B F1 E8 ? ? ? ?"));
 		DebugConsole::once("skins.signature_status",
-			"[skins] resolved set_attribute=0x%llX change_model=0x%llX viewmodel=0x%llX model_path=0x%llX apply_econ=0x%llX update_subclass=0x%llX regen_all=0x%llX regen_one=0x%llX mesh_group=0x%llX invalidate=0x%llX bodygroup=0x%llX",
+			"[skins] resolved set_attribute=0x%llX add_stattrak=0x%llX change_model=0x%llX viewmodel=0x%llX model_path=0x%llX apply_econ=0x%llX update_subclass=0x%llX regen_all=0x%llX regen_one=0x%llX mesh_group=0x%llX invalidate=0x%llX bodygroup=0x%llX",
 			static_cast<unsigned long long>(reinterpret_cast<uintptr_t>(g_setItemAttribute)),
+			static_cast<unsigned long long>(reinterpret_cast<uintptr_t>(g_addStatTrakEntity)),
 			static_cast<unsigned long long>(reinterpret_cast<uintptr_t>(g_changeModel)),
 			static_cast<unsigned long long>(reinterpret_cast<uintptr_t>(g_getViewModel)),
 			static_cast<unsigned long long>(reinterpret_cast<uintptr_t>(g_getModelPath)),
@@ -830,6 +836,31 @@ namespace {
 		}
 	}
 
+	bool safeSetStatTrakAttributes(void* item, int value)
+	{
+		const int countBits = value >= 0 ? value : -1;
+		const int scoreTypeBits = value >= 0 ? 0 : -1;
+		float countValue = 0.0f;
+		float scoreTypeValue = 0.0f;
+		std::memcpy(&countValue, &countBits, sizeof(countValue));
+		std::memcpy(&scoreTypeValue, &scoreTypeBits, sizeof(scoreTypeValue));
+		return safeSetItemAttribute(item, "kill eater", countValue) &&
+			safeSetItemAttribute(item, "kill eater score type", scoreTypeValue);
+	}
+
+	bool safeAddStatTrakEntity(uintptr_t weapon, uintptr_t item)
+	{
+		if (!g_addStatTrakEntity || weapon <= 0x10000 || item <= 0x10000)
+			return false;
+		__try {
+			g_addStatTrakEntity(reinterpret_cast<void*>(weapon), reinterpret_cast<void*>(item));
+			return true;
+		}
+		__except (EXCEPTION_EXECUTE_HANDLER) {
+			return false;
+		}
+	}
+
 	bool safeReadItemDefinition(uintptr_t item, uint16_t* definition)
 	{
 		const std::ptrdiff_t definitionOffset = Offset::C_EconItemView::m_iItemDefinitionIndex;
@@ -844,7 +875,7 @@ namespace {
 	}
 
 	bool safeApplyLoadoutSkin(uintptr_t item, int targetDefinition, int quality,
-		int paintKit, int seed, float wear)
+		int paintKit, int seed, float wear, int statTrak)
 	{
 		const std::ptrdiff_t definitionOffset = Offset::C_EconItemView::m_iItemDefinitionIndex;
 		const std::ptrdiff_t qualityOffset = Offset::C_EconItemView::m_iEntityQuality;
@@ -875,7 +906,8 @@ namespace {
 
 		return safeSetItemAttribute(reinterpret_cast<void*>(item), "set item texture prefab", static_cast<float>(paintKit)) &&
 			safeSetItemAttribute(reinterpret_cast<void*>(item), "set item texture seed", static_cast<float>(seed)) &&
-			safeSetItemAttribute(reinterpret_cast<void*>(item), "set item texture wear", wear);
+			safeSetItemAttribute(reinterpret_cast<void*>(item), "set item texture wear", wear) &&
+			safeSetStatTrakAttributes(reinterpret_cast<void*>(item), statTrak);
 	}
 
 	bool isHudWeaponEntity(C_BaseEntity* candidate)
@@ -1372,7 +1404,11 @@ namespace {
 	{
 		if (ImGui::BeginCombo("Knife model", kKnives[g_knifeIndex].name)) {
 			for (int i = 0; i < static_cast<int>(kKnives.size()) - 1; ++i)
-				if (ImGui::Selectable(kKnives[i].name, i == g_knifeIndex)) { g_knifeIndex = i; g_skinIndex = -1; }
+				if (ImGui::Selectable(kKnives[i].name, i == g_knifeIndex)) {
+					g_knifeIndex = i;
+					g_skinIndex = -1;
+					g_statTrak = g_hasKnifeSkin && g_selectedKnife == i ? g_knifeSkin.statTrak : -1;
+				}
 			ImGui::EndCombo();
 		}
 		ImGui::InputTextWithHint("##knife-search", "Search knife finishes", g_search, IM_ARRAYSIZE(g_search));
@@ -1385,6 +1421,7 @@ namespace {
 				g_skinIndex = i;
 				g_wear = g_knifeSkin.wear;
 				g_seed = g_knifeSkin.seed;
+				g_statTrak = g_knifeSkin.statTrak;
 				break;
 			}
 		}
@@ -1394,8 +1431,10 @@ namespace {
 			ImGui::TextColored(ImColor(rarityColor(skin.rarity)), "%s", skin.name.c_str());
 			ImGui::SliderFloat("Wear", &g_wear, skin.minWear, (std::max)(skin.minWear + 0.001f, skin.maxWear), "%.4f");
 			ImGui::InputInt("Seed", &g_seed);
+			ImGui::InputInt("StatTrak", &g_statTrak);
+			if (g_statTrak < -1) g_statTrak = -1;
 			if (ImGui::Button("Apply knife")) {
-				g_knifeSkin = SelectedSkin{ skin, g_wear, g_seed, -1 };
+				g_knifeSkin = SelectedSkin{ skin, g_wear, g_seed, g_statTrak };
 				g_hasKnifeSkin = true;
 				g_selectedKnife = g_knifeIndex;
 				requestSkinRefresh();
@@ -1532,10 +1571,12 @@ namespace {
 		*reinterpret_cast<uint32_t*>(item + Offset::C_EconItemView::m_iItemIDLow) = saved.itemIdLow;
 		*reinterpret_cast<uint32_t*>(item + Offset::C_EconItemView::m_iAccountID) = saved.accountId;
 		*reinterpret_cast<uint8_t*>(item + Offset::C_EconItemView::m_bInitialized) = saved.initialized;
+		*reinterpret_cast<int*>(item + Offset::C_EconItemView::m_iEntityQuality) = saved.quality;
 		*reinterpret_cast<uint8_t*>(item + Offset::C_EconItemView::m_bDisallowSOC) = 0;
+		if (!safeSetStatTrakAttributes(reinterpret_cast<void*>(item), saved.statTrak)) return false;
+		if (saved.statTrak >= 0) safeAddStatTrakEntity(weapon, item);
 		if (restoreDefinition) {
 			*reinterpret_cast<uint16_t*>(item + Offset::C_EconItemView::m_iItemDefinitionIndex) = saved.definition;
-			*reinterpret_cast<int*>(item + Offset::C_EconItemView::m_iEntityQuality) = saved.quality;
 			*reinterpret_cast<uint32_t*>(weapon + Offset::C_BaseEntity::m_nSubclassID) = saved.subclass;
 			if (!safeChangeItemModel(reinterpret_cast<void*>(weapon), reinterpret_cast<void*>(item), pawn, activeWeapon))
 				return false;
@@ -1577,6 +1618,8 @@ namespace {
 		}
 
 		captureWeaponBaseline(weapon, item);
+		const auto baseline = g_weaponBaselines.find(weapon);
+		if (baseline == g_weaponBaselines.end()) return false;
 		*reinterpret_cast<uint8_t*>(item + Offset::C_EconItemView::m_bDisallowSOC) = 0;
 		const uint64_t fauxItemId = makeFauxItemId(updateKnifeModel ? kKnifeFauxItemHandle : itemHandle);
 		*reinterpret_cast<uint64_t*>(item + Offset::C_EconItemView::m_iItemID) = fauxItemId;
@@ -1584,6 +1627,8 @@ namespace {
 		*reinterpret_cast<uint32_t*>(item + Offset::C_EconItemView::m_iItemIDLow) = static_cast<uint32_t>(fauxItemId);
 		*reinterpret_cast<uint32_t*>(item + Offset::C_EconItemView::m_iAccountID) = accountId;
 		*reinterpret_cast<uint8_t*>(item + Offset::C_EconItemView::m_bInitialized) = 1;
+		*reinterpret_cast<int*>(item + Offset::C_EconItemView::m_iEntityQuality) =
+			selection.statTrak >= 0 ? 3 : baseline->second.quality;
 		*reinterpret_cast<int*>(weapon + Offset::C_EconEntity::m_nFallbackPaintKit) = skin.paintKit;
 		*reinterpret_cast<int*>(weapon + Offset::C_EconEntity::m_nFallbackSeed) = selection.seed;
 		*reinterpret_cast<float*>(weapon + Offset::C_EconEntity::m_flFallbackWear) = selection.wear;
@@ -1591,12 +1636,14 @@ namespace {
 
 		const bool attributesSet = safeSetItemAttribute(reinterpret_cast<void*>(item), "set item texture prefab", static_cast<float>(skin.paintKit)) &&
 			safeSetItemAttribute(reinterpret_cast<void*>(item), "set item texture seed", static_cast<float>(selection.seed)) &&
-			safeSetItemAttribute(reinterpret_cast<void*>(item), "set item texture wear", selection.wear);
+			safeSetItemAttribute(reinterpret_cast<void*>(item), "set item texture wear", selection.wear) &&
+			safeSetStatTrakAttributes(reinterpret_cast<void*>(item), selection.statTrak);
 		if (!attributesSet) {
 			DebugConsole::rateLimited("skins.attributes_set_failed", "[skins] item paint attributes failed weapon=0x%llX paint=%d seed=%d",
 				static_cast<unsigned long long>(weapon), skin.paintKit, selection.seed);
 			return false;
 		}
+		const bool statTrakEntityAdded = selection.statTrak < 0 || safeAddStatTrakEntity(weapon, item);
 		if (updateKnifeModel && !safeChangeItemModel(reinterpret_cast<void*>(weapon), reinterpret_cast<void*>(item), pawn, activeWeapon)) {
 			DebugConsole::rateLimited("skins.knife_model_update_failed", "[skins] knife model setter failed weapon=0x%llX",
 				static_cast<unsigned long long>(weapon));
@@ -1615,12 +1662,15 @@ namespace {
 			__except (EXCEPTION_EXECUTE_HANDLER) {}
 		}
 		DebugConsole::logf(
-			"[skins] applied weapon=0x%llX definition=%u paint=%d legacy=%d active=%d attributes=%d knife_model_update=%d faux_item_id=0x%llX fallback_paint=%d disallow_soc=%u restore_material=%u",
+			"[skins] applied weapon=0x%llX definition=%u paint=%d legacy=%d active=%d attributes=%d knife_model_update=%d stattrak_entity=%d faux_item_id=0x%llX fallback_paint=%d fallback_stattrak=%d quality=%d disallow_soc=%u restore_material=%u",
 			static_cast<unsigned long long>(weapon),
 			static_cast<unsigned int>(*reinterpret_cast<uint16_t*>(item + Offset::C_EconItemView::m_iItemDefinitionIndex)),
-			skin.paintKit, skin.legacyModel ? 1 : 0, activeWeapon ? 1 : 0, attributesSet ? 1 : 0, updateKnifeModel ? 1 : 0,
+			skin.paintKit, skin.legacyModel ? 1 : 0, activeWeapon ? 1 : 0, attributesSet ? 1 : 0,
+			updateKnifeModel ? 1 : 0, statTrakEntityAdded ? 1 : 0,
 			static_cast<unsigned long long>(fauxItemId),
 			*reinterpret_cast<int*>(weapon + Offset::C_EconEntity::m_nFallbackPaintKit),
+			*reinterpret_cast<int*>(weapon + Offset::C_EconEntity::m_nFallbackStatTrak),
+			*reinterpret_cast<int*>(item + Offset::C_EconItemView::m_iEntityQuality),
 			static_cast<unsigned int>(*reinterpret_cast<uint8_t*>(item + Offset::C_EconItemView::m_bDisallowSOC)),
 			static_cast<unsigned int>(*reinterpret_cast<uint8_t*>(item + Offset::C_EconItemView::m_bRestoreCustomMaterialAfterPrecache)));
 		g_weaponSkinRegenerationPending = true;
@@ -1677,6 +1727,10 @@ namespace {
 			const uint32_t liveSubclass = *reinterpret_cast<uint32_t*>(weapon + Offset::C_BaseEntity::m_nSubclassID);
 			const uint32_t targetSubclass = knifeSubclassToken(knife->definition);
 			const int livePaint = *reinterpret_cast<int*>(weapon + Offset::C_EconEntity::m_nFallbackPaintKit);
+			const int liveStatTrak = *reinterpret_cast<int*>(weapon + Offset::C_EconEntity::m_nFallbackStatTrak);
+			const int liveQuality = *reinterpret_cast<int*>(item + Offset::C_EconItemView::m_iEntityQuality);
+			const int expectedQuality = g_knifeSkin.statTrak >= 0 ? 3 :
+				(baseline != g_weaponBaselines.end() ? baseline->second.quality : liveQuality);
 			const uint64_t expectedItemId = makeFauxItemId(kKnifeFauxItemHandle);
 			const bool itemStateChanged =
 				*reinterpret_cast<uint64_t*>(item + Offset::C_EconItemView::m_iItemID) != expectedItemId ||
@@ -1686,7 +1740,9 @@ namespace {
 				(activeWeaponChanged && isActive);
 			const bool skinChanged = modelChanged || applied == g_appliedWeaponSkins.end() ||
 				applied->second.paintKit != g_knifeSkin.skin.paintKit || applied->second.seed != g_knifeSkin.seed ||
-				applied->second.wear != g_knifeSkin.wear || livePaint != g_knifeSkin.skin.paintKit || itemStateChanged ||
+				applied->second.wear != g_knifeSkin.wear || applied->second.statTrak != g_knifeSkin.statTrak ||
+				livePaint != g_knifeSkin.skin.paintKit || liveStatTrak != g_knifeSkin.statTrak ||
+				liveQuality != expectedQuality || itemStateChanged ||
 				applied->second.refreshRevision != g_skinRefreshRevision;
 			if (!skinChanged) return;
 			if (skinApplyRetryDeferred(weapon)) return;
@@ -1751,6 +1807,9 @@ namespace {
 		const int liveSeed = *reinterpret_cast<int*>(weapon + Offset::C_EconEntity::m_nFallbackSeed);
 		const float liveWear = *reinterpret_cast<float*>(weapon + Offset::C_EconEntity::m_flFallbackWear);
 		const int liveStatTrak = *reinterpret_cast<int*>(weapon + Offset::C_EconEntity::m_nFallbackStatTrak);
+		const int liveQuality = *reinterpret_cast<int*>(item + Offset::C_EconItemView::m_iEntityQuality);
+		const int expectedQuality = choice.statTrak >= 0 ? 3 :
+			(baseline != g_weaponBaselines.end() ? baseline->second.quality : liveQuality);
 		const uint64_t expectedItemId = makeFauxItemId(itemHandle);
 		const bool itemStateChanged =
 			*reinterpret_cast<uint64_t*>(item + Offset::C_EconItemView::m_iItemID) != expectedItemId ||
@@ -1759,7 +1818,7 @@ namespace {
 			applied->second.paintKit != choice.skin.paintKit || applied->second.seed != choice.seed ||
 			applied->second.wear != choice.wear || applied->second.statTrak != choice.statTrak ||
 			livePaint != choice.skin.paintKit || liveSeed != choice.seed || liveWear != choice.wear ||
-			liveStatTrak != choice.statTrak || itemStateChanged ||
+			liveStatTrak != choice.statTrak || liveQuality != expectedQuality || itemStateChanged ||
 			(activeWeaponChanged && isActive) || applied->second.refreshRevision != g_skinRefreshRevision;
 		if (!skinChanged) return;
 		if (skinApplyRetryDeferred(weapon)) return;
@@ -2082,6 +2141,7 @@ void onItemInLoadout(std::uintptr_t itemView, std::uint32_t team, std::uint32_t 
 			const auto choice = g_weaponSelection.find(definition);
 			if (choice != g_weaponSelection.end()) {
 				selected = choice->second;
+				quality = selected.statTrak >= 0 ? 3 : 0;
 				hasSelection = true;
 			}
 		}
@@ -2100,7 +2160,7 @@ void onItemInLoadout(std::uintptr_t itemView, std::uint32_t team, std::uint32_t 
 		return;
 	}
 	if (!safeApplyLoadoutSkin(itemView, targetDefinition, quality, selected.skin.paintKit,
-		selected.seed, selected.wear)) {
+		selected.seed, selected.wear, selected.statTrak)) {
 		DebugConsole::rateLimited("skins.loadout_view_apply_failed",
 			"[skins] GetItemInLoadout skin apply failed: def=%d target=%d paint=%d team=%u slot=%u",
 			definition, targetDefinition, selected.skin.paintKit, team, loadoutSlot);

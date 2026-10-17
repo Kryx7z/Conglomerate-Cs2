@@ -23,10 +23,13 @@
 #include "../menu/menu.h"
 #include "../utils/memory/seh_diagnostics.h"
 #include "../utils/debug_console.h"
+#include "../features/world/weather_rain_asset.h"
 
 #include <cstdio>
 #include <atomic>
+#include <algorithm>
 #include <cstddef>
+#include <cstring>
 #include <vector>
 
 static bool IsExecutableAddress(const void* address)
@@ -80,6 +83,98 @@ static bool ReadMemorySafe(std::uintptr_t address, void* output, std::size_t siz
 	SIZE_T bytesRead = 0;
 	return ReadProcessMemory(GetCurrentProcess(), reinterpret_cast<const void*>(address),
 		output, size, &bytesRead) != FALSE && bytesRead == size;
+}
+
+static bool WriteMemorySafe(std::uintptr_t address, const void* input, std::size_t size)
+{
+	if (!address || !input || !size)
+		return false;
+
+	SIZE_T bytesWritten = 0;
+	return WriteProcessMemory(GetCurrentProcess(), reinterpret_cast<void*>(address),
+		input, size, &bytesWritten) != FALSE && bytesWritten == size;
+}
+
+static std::uintptr_t AllocateAsyncFileBuffer(std::uintptr_t asyncFileSystem,
+	std::size_t size, const char* path)
+{
+	std::uintptr_t vtable = 0;
+	std::uintptr_t allocate = 0;
+	if (!SafeMemory::read(asyncFileSystem, vtable) || !vtable ||
+		!SafeMemory::read(vtable + 22 * sizeof(std::uintptr_t), allocate) || !allocate)
+		return 0;
+
+	using AllocateFn = std::uintptr_t(__fastcall*)(std::uintptr_t, std::size_t, const char*);
+	if (!IsExecutableAddress(reinterpret_cast<void*>(allocate)))
+		return 0;
+	return reinterpret_cast<AllocateFn>(allocate)(asyncFileSystem, size, path);
+}
+
+static void CloseEmbeddedFileRequest(std::uintptr_t request)
+{
+	static const auto closePattern = M::patternScan("filesystem_stdio",
+		"48 8D 8F 20 FF FF FF 8B D5 E8 ? ? ? ? FF D3");
+	static const auto closeFile = closePattern
+		? M::getAbsoluteAddress(closePattern, 0xA)
+		: 0;
+	if (!closeFile || !IsExecutableAddress(reinterpret_cast<void*>(closeFile)))
+		return;
+
+	using CloseFn = void(__fastcall*)(std::uintptr_t, int);
+	reinterpret_cast<CloseFn>(closeFile)(request - 224, 0);
+}
+
+std::uintptr_t __fastcall H::hkFileServiceRead(std::uintptr_t request)
+{
+	const auto original = H::FileServiceRead.GetOriginal();
+	if (!original)
+		return 0;
+
+	std::uint32_t flagsAndLength = 0;
+	char path[512]{};
+	if (request >= 224 && SafeMemory::read(request - 212, flagsAndLength))
+	{
+		const auto length = static_cast<std::size_t>(flagsAndLength & 0x3FFFFFFFu);
+		if (length > 0 && length < sizeof(path))
+		{
+			if (flagsAndLength & 0x40000000u)
+			{
+				ReadMemorySafe(request - 208, path, length);
+			}
+			else
+			{
+				std::uintptr_t pathPointer = 0;
+				if (SafeMemory::read(request - 208, pathPointer) && pathPointer)
+					ReadMemorySafe(pathPointer, path, length);
+			}
+		}
+	}
+
+	if (std::strstr(path, "particles/embedded/rain.vpcf"))
+	{
+		std::uintptr_t asyncFileSystem = 0;
+		if (SafeMemory::read(request + 24, asyncFileSystem) && asyncFileSystem)
+		{
+			const auto buffer = AllocateAsyncFileBuffer(asyncFileSystem,
+				kWeatherRainParticleSize, path);
+			if (buffer && WriteMemorySafe(buffer, kWeatherRainParticle,
+				kWeatherRainParticleSize) &&
+				SafeMemory::write(request + 56, buffer) &&
+				SafeMemory::write(request + 64, kWeatherRainParticleSize) &&
+				SafeMemory::write(request + 72, kWeatherRainParticleSize))
+			{
+				CloseEmbeddedFileRequest(request);
+				DebugConsole::once("weather.rain.asset_loaded",
+					"[weather] embedded rain particle resource supplied: bytes=%zu", kWeatherRainParticleSize);
+				return 0;
+			}
+		}
+
+		DebugConsole::rateLimited("weather.rain.asset_failed",
+			"[weather] embedded rain resource request could not be fulfilled");
+	}
+
+	return original(request);
 }
 
 struct ExecutablePatternScanResult
@@ -311,6 +406,16 @@ static void hkFrameStageNotify_impl(void* a1, int stage)
 		{
 		}
 	}
+	if (stage == 7)
+	{
+		__try
+		{
+			H::updateRain();
+		}
+		__except (SehDiagnostics::handle("hook.frame_stage.weather"))
+		{
+		}
+	}
 	static std::atomic<std::uint32_t> observedStages{};
 	if (stage >= 0 && stage < 32)
 	{
@@ -378,6 +483,7 @@ void __fastcall H::hkFrameStageNotify(void* a1, int stage)
 
 void* __fastcall H::hkLevelInit(void* pClientModeShared, const char* szNewMap) {
 	static void* g_pPVS = (void*)M::getAbsoluteAddress(M::patternScan("engine2", "48 8D 0D ? ? ? ? 33 D2 FF 50"), 0x3);
+	H::releaseRain();
 
 	if (g_pPVS)
 		M::vfunc<void*, 6U, void>(g_pPVS, false);
@@ -474,6 +580,16 @@ void H::Hooks::init() {
 	auto scan = [](const char* module, const char* pattern) -> uintptr_t {
 		return M::patternScan(module, pattern);
 	};
+	const uintptr_t fileServiceReadPattern = scan("filesystem_stdio",
+		"00 48 89 07 48 8D 05 ? ? ? ? 48 89 87 E0 00 00 00");
+	const uintptr_t fileServiceReadSlot = fileServiceReadPattern
+		? M::getAbsoluteAddress(fileServiceReadPattern, 0x7)
+		: 0;
+	uintptr_t fileServiceRead = 0;
+	if (fileServiceReadSlot)
+		SafeMemory::read(fileServiceReadSlot, fileServiceRead);
+	InstallHook("EmbeddedParticleRead", "filesystem_stdio", fileServiceRead, FileServiceRead,
+		reinterpret_cast<void*>(&hkFileServiceRead));
 
 	const uintptr_t clientBaseForLoadout = modules.getModule("client");
 	constexpr uintptr_t expectedGetItemInLoadoutRva = 0x83CB10; // Stale hint; the signature is authoritative.
@@ -552,6 +668,10 @@ void H::Hooks::init() {
 		: 0;
 	InstallHook("SetShaderParam/NightMode", "client", setShaderParam, SetShaderParam,
 		reinterpret_cast<void*>(&hkSetShaderParam));
+	const uintptr_t setupFog = scan("client",
+		"48 89 5C 24 ? 48 89 6C 24 ? 48 89 74 24 ? 48 89 4C 24 ? 57 41 54 41 55 41 56 41 57 48 83 EC 20 48 63 02");
+	InstallHook("SetupFog/Weather", "client", setupFog, SetupFog,
+		reinterpret_cast<void*>(&hkSetupFog));
 	const uintptr_t setPostprocessVecCall = scan(
 		"engine2", "E8 ? ? ? ? 44 0F 28 94 24");
 	const uintptr_t setPostprocessVec = setPostprocessVecCall

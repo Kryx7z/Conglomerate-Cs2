@@ -27,18 +27,17 @@ namespace internal_config
             std::filesystem::path folder;
             if (err != 0 || userProfile == nullptr || len == 0)
             {
-                // _dupenv_s can still have handed back an allocation here (an
-                // empty USERPROFILE gives len == 0), so release it either way.
                 free(userProfile);
-                folder = ".conglomerate";
+                folder = "Documents";
+                folder /= "Conglomerate";
             }
             else
             {
                 folder = userProfile;
                 free(userProfile);
-                folder /= ".conglomerate";
+                folder /= "Documents";
+                folder /= "Conglomerate";
             }
-            folder /= "internal";
 
             std::error_code ec;
             std::filesystem::create_directories(folder, ec);
@@ -137,6 +136,34 @@ namespace internal_config
                 Config::NightColor.z,
                 Config::NightColor.w
             };
+            j["NightSkyColor"] = {
+                Config::NightSkyColor.x,
+                Config::NightSkyColor.y,
+                Config::NightSkyColor.z,
+                Config::NightSkyColor.w
+            };
+            j["weatherRainEnabled"] = Config::weatherRainEnabled;
+            j["weatherRainIntensity"] = Config::weatherRainIntensity;
+            j["weatherRainColor"] = {
+                Config::weatherRainColor.x,
+                Config::weatherRainColor.y,
+                Config::weatherRainColor.z,
+                Config::weatherRainColor.w
+            };
+            j["weatherWindEnabled"] = Config::weatherWindEnabled;
+            j["weatherWindStrength"] = Config::weatherWindStrength;
+            j["weatherWindDirection"] = Config::weatherWindDirection;
+            j["weatherWindTurbulence"] = Config::weatherWindTurbulence;
+            j["weatherFogEnabled"] = Config::weatherFogEnabled;
+            j["weatherFogDensity"] = Config::weatherFogDensity;
+            j["weatherFogAnisotropy"] = Config::weatherFogAnisotropy;
+            j["weatherFogDistance"] = Config::weatherFogDistance;
+            j["weatherFogColor"] = {
+                Config::weatherFogColor.x,
+                Config::weatherFogColor.y,
+                Config::weatherFogColor.z,
+                Config::weatherFogColor.w
+            };
 
             j["armChams"] = Config::armChams;
             j["viewmodelChams"] = Config::viewmodelChams;
@@ -158,6 +185,7 @@ namespace internal_config
             };
 
             j["aimbot"] = Config::aimbot;
+            j["aimbotVisibleCheck"] = Config::aimbotVisibleCheck;
             j["triggerbot"] = Config::triggerbot;
             j["triggerbot_team_check"] = Config::triggerbot_team_check;
             j["aimbot_fov"] = Config::aimbot_fov;
@@ -301,16 +329,60 @@ namespace internal_config
                 Config::NightColor.z = std::clamp(arr[2].get<float>(), 0.0f, 1.0f);
                 Config::NightColor.w = std::clamp(arr[3].get<float>(), 0.0f, 1.0f);
             }
+            if (j.contains("NightSkyColor") && j["NightSkyColor"].is_array() && j["NightSkyColor"].size() == 4)
+            {
+                const auto arr = j["NightSkyColor"];
+                Config::NightSkyColor.x = std::clamp(arr[0].get<float>(), 0.0f, 1.0f);
+                Config::NightSkyColor.y = std::clamp(arr[1].get<float>(), 0.0f, 1.0f);
+                Config::NightSkyColor.z = std::clamp(arr[2].get<float>(), 0.0f, 1.0f);
+                Config::NightSkyColor.w = std::clamp(arr[3].get<float>(), 0.0f, 1.0f);
+            }
+            Config::weatherRainEnabled = j.value("weatherRainEnabled", false);
+            Config::weatherRainIntensity = std::clamp(j.value("weatherRainIntensity", 1.0f), 0.1f, 2.0f);
+            if (j.contains("weatherRainColor") && j["weatherRainColor"].is_array() && j["weatherRainColor"].size() == 4)
+            {
+                const auto arr = j["weatherRainColor"];
+                Config::weatherRainColor.x = std::clamp(arr[0].get<float>(), 0.0f, 1.0f);
+                Config::weatherRainColor.y = std::clamp(arr[1].get<float>(), 0.0f, 1.0f);
+                Config::weatherRainColor.z = std::clamp(arr[2].get<float>(), 0.0f, 1.0f);
+                Config::weatherRainColor.w = std::clamp(arr[3].get<float>(), 0.0f, 1.0f);
+            }
+            Config::weatherWindEnabled = j.value("weatherWindEnabled", false);
+            Config::weatherWindStrength = std::clamp(j.value("weatherWindStrength", 3.0f), 0.0f, 5.0f);
+            Config::weatherWindDirection = std::clamp(j.value("weatherWindDirection", 0.0f), 0.0f, 360.0f);
+            Config::weatherWindTurbulence = std::clamp(j.value("weatherWindTurbulence", 1.0f), 0.0f, 5.0f);
+            Config::weatherFogEnabled = j.value("weatherFogEnabled", false);
+            auto fogDensity = j.value("weatherFogDensity", 0.9f);
+            auto fogAnisotropy = j.value("weatherFogAnisotropy", 0.0f);
+            auto fogDistance = j.value("weatherFogDistance", 1000.0f);
+            if (fogDensity == 0.5f && fogAnisotropy == 0.5f && fogDistance == 8000.0f)
+            {
+                fogDensity = 0.9f;
+                fogAnisotropy = 0.0f;
+                fogDistance = 1000.0f;
+            }
+            Config::weatherFogDensity = std::clamp(fogDensity, 0.0f, 1.0f);
+            Config::weatherFogAnisotropy = std::clamp(fogAnisotropy, 0.0f, 1.0f);
+            Config::weatherFogDistance = std::clamp(fogDistance, 500.0f, 20000.0f);
+            if (j.contains("weatherFogColor") && j["weatherFogColor"].is_array() && j["weatherFogColor"].size() == 4)
+            {
+                const auto arr = j["weatherFogColor"];
+                Config::weatherFogColor.x = std::clamp(arr[0].get<float>(), 0.0f, 1.0f);
+                Config::weatherFogColor.y = std::clamp(arr[1].get<float>(), 0.0f, 1.0f);
+                Config::weatherFogColor.z = std::clamp(arr[2].get<float>(), 0.0f, 1.0f);
+                Config::weatherFogColor.w = std::clamp(arr[3].get<float>(), 0.0f, 1.0f);
+            }
 
             Config::enemyChamsInvisible = j.value("enemyChamsInvisible", false);
             Config::enemyChams = j.value("enemyChams", false);
             Config::teamChams = j.value("teamChams", false);
             Config::teamChamsInvisible = j.value("teamChamsInvisible", false);
-            // Clamped here too: the value indexes a fixed 3-entry material table.
-            Config::chamsMaterial = std::clamp(j.value("chamsMaterial", 0), 0, 2);
+            // Keep persisted selections within the material table's valid range.
+            Config::chamsMaterial = std::clamp(j.value("chamsMaterial", 0), 0, 5);
 
             Config::fov_circle = j.value("fov_circle", false);
             Config::aimbot = j.value("aimbot", false);
+            Config::aimbotVisibleCheck = j.value("aimbotVisibleCheck", true);
             Config::triggerbot = j.value("triggerbot", false);
             Config::aimbot_fov = j.value("aimbot_fov", 0.f);
             Config::team_check = j.value("team_check", j.value("teamCheckAim", false));
@@ -329,8 +401,8 @@ namespace internal_config
 
             Config::armChams = j.value("armChams", false);
             Config::viewmodelChams = j.value("viewmodelChams", false);
-            Config::armChamsMaterial = std::clamp(j.value("armChamsMaterial", 0), 0, 2);
-            Config::viewmodelChamsMaterial = std::clamp(j.value("viewmodelChamsMaterial", 0), 0, 2);
+            Config::armChamsMaterial = std::clamp(j.value("armChamsMaterial", 0), 0, 5);
+            Config::viewmodelChamsMaterial = std::clamp(j.value("viewmodelChamsMaterial", 0), 0, 5);
 
             if (j.contains("colArmChams") && j["colArmChams"].is_array() && j["colArmChams"].size() == 4)
             {

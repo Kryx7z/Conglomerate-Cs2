@@ -1,6 +1,8 @@
 #include <algorithm>
 #include <array>
 #include <limits>
+#include <string>
+#include <string_view>
 #include "chams.h"
 #include "../skins/skins.h"
 #include "../../hooks/hooks.h"
@@ -54,6 +56,19 @@ CStrongHandle<CMaterial2> chams::create(const char* name, const char szVmatBuffe
     CKeyValues3::destroy_material_resource(pKeyValues3);
 
     return pCustomMaterial;
+}
+
+static CStrongHandle<CMaterial2> CreateChamsMaterialVariant(
+    const char* name, std::string_view definition, std::string_view depthFlags)
+{
+    constexpr std::string_view marker = "__CHAMS_DEPTH_FLAGS__";
+    std::string material(definition);
+    const auto markerPosition = material.find(marker);
+    if (markerPosition == std::string::npos)
+        return {};
+
+    material.replace(markerPosition, marker.size(), depthFlags.data(), depthFlags.size());
+    return chams::create(name, material.c_str());
 }
 
 struct resource_material_t
@@ -189,17 +204,125 @@ bool chams::Materials::init()
                 F_RENDER_BACKFACES = 0
 })");
 
+    constexpr std::string_view metallicVisibleFlags = R"(F_DISABLE_Z_PREPASS = 1
+    F_DISABLE_Z_WRITE = 1
+    F_DISABLE_Z_BUFFERING = 0)";
+    constexpr std::string_view metallicInvisibleFlags = R"(F_DISABLE_Z_PREPASS = 1
+    F_DISABLE_Z_WRITE = 1
+    F_DISABLE_Z_BUFFERING = 1)";
+    constexpr std::string_view darkMatterVisibleFlags = R"(F_IGNOREZ = 0
+    F_DISABLE_Z_WRITE = 1
+    F_DISABLE_Z_BUFFERING = 0)";
+    constexpr std::string_view darkMatterInvisibleFlags = R"(F_IGNOREZ = 1
+    F_DISABLE_Z_WRITE = 1
+    F_DISABLE_Z_BUFFERING = 1)";
+    constexpr std::string_view dataVisibleFlags = R"(F_DISABLE_Z_PREPASS = 0
+    F_DISABLE_Z_WRITE = 0
+    F_DISABLE_Z_BUFFERING = 0)";
+    constexpr std::string_view dataInvisibleFlags = R"(F_DISABLE_Z_PREPASS = 1
+    F_DISABLE_Z_WRITE = 1
+    F_DISABLE_Z_BUFFERING = 1)";
+
+    constexpr std::string_view metallicDefinition = R"(<!-- kv3 encoding:text:version{e21c7f3c-8a33-41c5-9977-a76d3a32aa0d} format:generic:version{7412167c-06e9-4698-aff2-e63eb59037e7} -->
+{
+    shader = "csgo_complex.vfx"
+    F_PAINT_VERTEX_COLORS = 1
+    F_TRANSLUCENT = 1
+    __CHAMS_DEPTH_FLAGS__
+    F_BLEND_MODE = 1
+    F_RENDER_BACKFACES = 0
+
+    g_vColorTint = [1.0, 1.0, 1.0, 1.0]
+    g_bFogEnabled = 0
+    g_flMetalness = 1.0
+    g_flModelTintAmount = 1.0
+    g_nScaleTexCoordUByModelScaleAxis = 0
+    g_nScaleTexCoordVByModelScaleAxis = 0
+    g_nTextureAddressModeU = 0
+    g_nTextureAddressModeV = 0
+    g_flTexCoordRotation = 0.0
+
+    g_tColor = resource:"materials/dev/primary_white_color_tga_21186c76.vtex"
+    g_tAmbientOcclusion = resource:"materials/default/default_ao_tga_559f1ac6.vtex"
+    g_tNormal = resource:"materials/default/default_normal_tga_1b833b2a.vtex"
+})";
+    constexpr std::string_view darkMatterDefinition = R"(<!-- kv3 encoding:text:version{e21c7f3c-8a33-41c5-9977-a76d3a32aa0d} format:generic:version{7412167c-06e9-4698-aff2-e63eb59037e7} -->
+{
+    shader = "csgo_unlitgeneric.vfx"
+    F_ADDITIVE_BLEND = 1
+    F_BLEND_MODE = 1
+    F_TRANSLUCENT = 1
+    F_PAINT_VERTEX_COLORS = 1
+    __CHAMS_DEPTH_FLAGS__
+    F_RENDER_BACKFACES = 0
+
+    g_vColorTint = [1.0, 1.0, 1.0, 1.0]
+    g_vTexCoordScrollSpeed = [0.13, 0.13]
+    g_tColor = resource:"materials/dev/water_waves.vtex"
+    g_tNormal = resource:"materials/default/default_normal_tga_7652cb.vtex"
+    g_tMask1 = resource:"materials/default/default_mask_tga_344101f8.vtex"
+    g_tMask2 = resource:"materials/default/default_mask_tga_344101f8.vtex"
+    g_tMask3 = resource:"materials/default/default_mask_tga_344101f8.vtex"
+    g_tRoughness = resource:"materials/default/default_normal_tga_b3f4ec4c.vtex"
+    g_tMetalness = resource:"materials/default/default_normal_tga_b3f4ec4c.vtex"
+    g_tAmbientOcclusion = resource:"materials/default/default_normal_tga_b3f4ec4c.vtex"
+})";
+    constexpr std::string_view dataDefinition = R"(<!-- kv3 encoding:text:version{e21c7f3c-8a33-41c5-9977-a76d3a32aa0d} format:generic:version{7412167c-06e9-4698-aff2-e63eb59037e7} -->
+{
+    shader = "csgo_complex.vfx"
+    __CHAMS_DEPTH_FLAGS__
+    F_TRANSLUCENT = 1
+    F_SELF_ILLUM = 1
+    F_PAINT_VERTEX_COLORS = 1
+
+    g_bFogEnabled = 1
+    g_flModelTintAmount = 1.0
+    g_flSelfIllumBrightness = 1.2
+    g_flSelfIllumScale = 2.0
+    g_vColorTint = [1.0, 1.0, 1.0, 1.0]
+    g_vSelfIllumTint = [1.0, 1.0, 1.0, 1.0]
+    g_vTexCoordScale = [10.0, 2.0]
+    g_vTexCoordOffset = [0.0, 0.0]
+    g_vTexCoordScrollSpeed = [0.2, 0.2]
+    g_tColor = resource:"materials/default/default_color_tga_71e37c58.vtex"
+    g_tNormal = resource:"materials/default/default_normal_tga_7be61377.vtex"
+    g_tSelfIllumMask = resource:"materials/default/stickers/squares_glitter_normal_tga_25145674.vtex"
+    g_tAmbientOcclusion = resource:"materials/default/default_ao_tga_559f1ac6.vtex"
+})";
+
+    resourceMaterials[METALLIC].mat = CreateChamsMaterialVariant(
+        "conglomerate_metallic.vmat", metallicDefinition, metallicVisibleFlags);
+    resourceMaterials[METALLIC].mat_invs = CreateChamsMaterialVariant(
+        "conglomerate_metallic_invs.vmat", metallicDefinition, metallicInvisibleFlags);
+    resourceMaterials[DARK_MATTER].mat = CreateChamsMaterialVariant(
+        "conglomerate_dark_matter.vmat", darkMatterDefinition, darkMatterVisibleFlags);
+    resourceMaterials[DARK_MATTER].mat_invs = CreateChamsMaterialVariant(
+        "conglomerate_dark_matter_invs.vmat", darkMatterDefinition, darkMatterInvisibleFlags);
+    resourceMaterials[DATA].mat = CreateChamsMaterialVariant(
+        "conglomerate_data.vmat", dataDefinition, dataVisibleFlags);
+    resourceMaterials[DATA].mat_invs = CreateChamsMaterialVariant(
+        "conglomerate_data_invs.vmat", dataDefinition, dataInvisibleFlags);
+
     const bool allCreated =
         resourceMaterials[FLAT].mat != nullptr &&
         resourceMaterials[FLAT].mat_invs != nullptr &&
         resourceMaterials[ILLUMINATE].mat != nullptr &&
         resourceMaterials[ILLUMINATE].mat_invs != nullptr &&
         resourceMaterials[GLOW].mat != nullptr &&
-        resourceMaterials[GLOW].mat_invs != nullptr;
-	DebugConsole::logf("[materials] create results flat=%d/%d illuminate=%d/%d glow=%d/%d",
+        resourceMaterials[GLOW].mat_invs != nullptr &&
+        resourceMaterials[METALLIC].mat != nullptr &&
+        resourceMaterials[METALLIC].mat_invs != nullptr &&
+        resourceMaterials[DARK_MATTER].mat != nullptr &&
+        resourceMaterials[DARK_MATTER].mat_invs != nullptr &&
+        resourceMaterials[DATA].mat != nullptr &&
+        resourceMaterials[DATA].mat_invs != nullptr;
+	DebugConsole::logf("[materials] create results flat=%d/%d illuminate=%d/%d glow=%d/%d metallic=%d/%d dark_matter=%d/%d data=%d/%d",
 		resourceMaterials[FLAT].mat != nullptr, resourceMaterials[FLAT].mat_invs != nullptr,
 		resourceMaterials[ILLUMINATE].mat != nullptr, resourceMaterials[ILLUMINATE].mat_invs != nullptr,
-		resourceMaterials[GLOW].mat != nullptr, resourceMaterials[GLOW].mat_invs != nullptr);
+		resourceMaterials[GLOW].mat != nullptr, resourceMaterials[GLOW].mat_invs != nullptr,
+        resourceMaterials[METALLIC].mat != nullptr, resourceMaterials[METALLIC].mat_invs != nullptr,
+        resourceMaterials[DARK_MATTER].mat != nullptr, resourceMaterials[DARK_MATTER].mat_invs != nullptr,
+        resourceMaterials[DATA].mat != nullptr, resourceMaterials[DATA].mat_invs != nullptr);
 
     return allCreated;
 }

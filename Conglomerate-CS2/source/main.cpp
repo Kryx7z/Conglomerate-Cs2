@@ -43,9 +43,7 @@ LRESULT __stdcall WndProc(const HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lPar
         case WM_KEYDOWN: case WM_KEYUP:
         case WM_SYSKEYDOWN: case WM_SYSKEYUP:
         case WM_CHAR:
-        case WM_INPUT: // raw input - this is how most Source2 games actually read camera look
-            // Swallow it: don't forward to the game's own WndProc, so it never
-            // sees mouse movement/clicks or keyboard input while our menu is open.
+        case WM_INPUT: 
             return 0;
         default:
             break;

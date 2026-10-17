@@ -20,6 +20,19 @@ namespace Config {
 
 	extern bool Night;
 	extern ImVec4 NightColor;
+	extern ImVec4 NightSkyColor;
+	extern bool weatherRainEnabled;
+	extern float weatherRainIntensity;
+	extern ImVec4 weatherRainColor;
+	extern bool weatherWindEnabled;
+	extern float weatherWindStrength;
+	extern float weatherWindDirection;
+	extern float weatherWindTurbulence;
+	extern bool weatherFogEnabled;
+	extern float weatherFogDensity;
+	extern float weatherFogAnisotropy;
+	extern float weatherFogDistance;
+	extern ImVec4 weatherFogColor;
 	extern bool bunnyHop;
 
 	extern bool enemyChamsInvisible;
@@ -49,6 +62,7 @@ namespace Config {
 	extern bool noSmoke;
 
 	extern bool aimbot;
+	extern bool aimbotVisibleCheck;
 	extern bool triggerbot;
 	extern bool triggerbot_team_check;
 	extern float aimbot_fov;

@@ -5,6 +5,8 @@ Module::Module(uintptr_t moduleAddress, const std::string &moduleName) : address
 
 void Modules::init() {
 	registerModule("client.dll", "client");
+	registerModule("filesystem_stdio.dll", "filesystem_stdio");
+	registerModule("resourcesystem.dll", "resourcesystem");
 	registerModule("scenesystem.dll", "scenesystem");
 	registerModule("particles.dll", "particles");
 	registerModule("materialsystem2.dll", "materialsystem2");

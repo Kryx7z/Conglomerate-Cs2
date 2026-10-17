@@ -101,6 +101,66 @@ namespace
         return true;
     }
 
+    bool IsValidAddress(std::uintptr_t address)
+    {
+        return address > 0x10000 && address < 0x7FFFFFFFFFFF;
+    }
+
+    bool GetAimBonePosition(C_CSPlayerPawn* pawn, int bone, Vector_t& position)
+    {
+        if (!pawn || bone < 0 || bone >= 64)
+            return false;
+
+        std::uintptr_t scene = 0;
+        __try
+        {
+            scene = reinterpret_cast<std::uintptr_t>(pawn->m_pGameSceneNode());
+        }
+        __except (SehDiagnostics::handle("aim.bone.scene_node"))
+        {
+            return false;
+        }
+
+        if (!IsValidAddress(scene))
+            return false;
+
+        std::uintptr_t boneArray = 0;
+        if (!SafeMemory::read(scene + 0x1C0u, boneArray) || !IsValidAddress(boneArray) ||
+            !SafeMemory::read(boneArray + static_cast<std::uintptr_t>(bone) * 0x20u, position))
+        {
+            return false;
+        }
+
+        return std::isfinite(position.x) && std::isfinite(position.y) && std::isfinite(position.z);
+    }
+
+    bool TraceToPoint(C_CSPlayerPawn* localPawn, const Vector_t& start, const Vector_t& end,
+        std::uintptr_t& hitEntity)
+    {
+        if (!localPawn || !std::isfinite(start.x) || !std::isfinite(start.y) || !std::isfinite(start.z) ||
+            !std::isfinite(end.x) || !std::isfinite(end.y) || !std::isfinite(end.z))
+        {
+            return false;
+        }
+
+        std::uintptr_t traceManager = 0;
+        TraceFilterInitFn initializeFilter = nullptr;
+        TraceRayFn traceRay = nullptr;
+        if (!ResolveTraceFunctions(traceManager, initializeFilter, traceRay))
+            return false;
+
+        TraceFilter filter{};
+        initializeFilter(&filter, reinterpret_cast<std::uintptr_t>(localPawn), 0x1c3003u, 4, 7);
+        TraceRay ray{};
+        TraceResult result{};
+        result.fraction = 1.0f;
+        if (!traceRay(traceManager, &ray, &start, &end, &filter, &result))
+            return false;
+
+        hitEntity = result.hitEntity;
+        return true;
+    }
+
     bool IsFirearm(C_CSPlayerPawn* pawn)
     {
         if (!pawn)
@@ -161,23 +221,7 @@ namespace
         const Vector_t end(start.x + direction.x * traceDistance,
             start.y + direction.y * traceDistance,
             start.z + direction.z * traceDistance);
-
-        std::uintptr_t traceManager = 0;
-        TraceFilterInitFn initializeFilter = nullptr;
-        TraceRayFn traceRay = nullptr;
-        if (!ResolveTraceFunctions(traceManager, initializeFilter, traceRay))
-            return false;
-
-        TraceFilter filter{};
-        initializeFilter(&filter, reinterpret_cast<std::uintptr_t>(localPawn), 0x1c3003u, 4, 7);
-        TraceRay ray{};
-        TraceResult result{};
-        result.fraction = 1.0f;
-        if (!traceRay(traceManager, &ray, &start, &end, &filter, &result))
-            return false;
-
-        hitEntity = result.hitEntity;
-        return hitEntity != 0;
+        return TraceToPoint(localPawn, start, end, hitEntity) && hitEntity != 0;
     }
 
     bool TraceCrosshair(void* input, int slot, C_CSPlayerPawn* localPawn,
@@ -449,16 +493,44 @@ void Aimbot(void* input, int slot) {
         if (Config::team_check && pawn->getTeam() == lp->getTeam())
             continue;
 
-        Vector_t eye_pos = GetEntityEyePos(pawn);
-        QAngle_t angle = CalcAngles(lep, eye_pos);
+        Vector_t aimPoints[3]{};
+        int aimPointCount = 0;
+        Vector_t point{};
+        if (GetAimBonePosition(pawn, 7, point))
+            aimPoints[aimPointCount++] = point;
+        if (GetAimBonePosition(pawn, 4, point))
+            aimPoints[aimPointCount++] = point;
+        if (aimPointCount == 0)
+        {
+            point = GetEntityEyePos(pawn);
+            if (std::isfinite(point.x) && std::isfinite(point.y) && std::isfinite(point.z) &&
+                (point.x != 0.0f || point.y != 0.0f || point.z != 0.0f))
+            {
+                aimPoints[aimPointCount++] = point;
+            }
+        }
 
-        const float fov = GetFov(*viewangles, angle);
-        if (!std::isfinite(fov) || fov > best_fov)
-            continue;
+        for (int pointIndex = 0; pointIndex < aimPointCount; ++pointIndex)
+        {
+            const QAngle_t angle = CalcAngles(lep, aimPoints[pointIndex]);
+            const float fov = GetFov(*viewangles, angle);
+            if (!std::isfinite(fov) || fov > best_fov)
+                continue;
 
-        best_fov = fov;
-        best_pawn = pawn;
-        best_angle = angle;
+            if (Config::aimbotVisibleCheck)
+            {
+                std::uintptr_t hitEntity = 0;
+                if (!TraceToPoint(lp, lep, aimPoints[pointIndex], hitEntity) ||
+                    hitEntity != reinterpret_cast<std::uintptr_t>(pawn))
+                {
+                    continue;
+                }
+            }
+
+            best_fov = fov;
+            best_pawn = pawn;
+            best_angle = angle;
+        }
     }
 
     if (best_pawn) {

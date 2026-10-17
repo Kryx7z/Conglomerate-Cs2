@@ -12,6 +12,9 @@ enum ChamsType {
 	FLAT,
 	ILLUMINATE,
 	GLOW,
+	METALLIC,
+	DARK_MATTER,
+	DATA,
 	MAXCOUNT
 };
 
