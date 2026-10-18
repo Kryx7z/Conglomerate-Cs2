@@ -114,6 +114,42 @@ namespace
         return result;
     }
 
+    void DrawAwpCrosshair()
+    {
+        if (!Config::awpCrosshair || !H::oGetLocalPlayer)
+            return;
+
+        C_CSPlayerPawn* localPawn = H::oGetLocalPlayer(0);
+        if (!localPawn || localPawn->m_iHealth() <= 0)
+            return;
+
+        const char* weaponName = GetActiveWeaponName(localPawn);
+        if (!weaponName || (std::strcmp(weaponName, "weapon_awp") != 0 &&
+            std::strcmp(weaponName, "weapon_ssg08") != 0))
+        {
+            return;
+        }
+
+        const ImVec2 displaySize = ImGui::GetIO().DisplaySize;
+        const ImVec2 center(displaySize.x * 0.5f, displaySize.y * 0.5f);
+        ImDrawList* drawList = ImGui::GetBackgroundDrawList();
+        constexpr float gap = 3.0f;
+        constexpr float arm = 7.0f;
+        constexpr float outline = 3.5f;
+        constexpr float thickness = 1.5f;
+        const ImU32 outlineColor = IM_COL32(0, 0, 0, 220);
+        const ImU32 crosshairColor = IM_COL32(255, 255, 255, 245);
+
+        drawList->AddLine(ImVec2(center.x - gap - arm, center.y), ImVec2(center.x - gap, center.y), outlineColor, outline);
+        drawList->AddLine(ImVec2(center.x + gap, center.y), ImVec2(center.x + gap + arm, center.y), outlineColor, outline);
+        drawList->AddLine(ImVec2(center.x, center.y - gap - arm), ImVec2(center.x, center.y - gap), outlineColor, outline);
+        drawList->AddLine(ImVec2(center.x, center.y + gap), ImVec2(center.x, center.y + gap + arm), outlineColor, outline);
+        drawList->AddLine(ImVec2(center.x - gap - arm, center.y), ImVec2(center.x - gap, center.y), crosshairColor, thickness);
+        drawList->AddLine(ImVec2(center.x + gap, center.y), ImVec2(center.x + gap + arm, center.y), crosshairColor, thickness);
+        drawList->AddLine(ImVec2(center.x, center.y - gap - arm), ImVec2(center.x, center.y - gap), crosshairColor, thickness);
+        drawList->AddLine(ImVec2(center.x, center.y + gap), ImVec2(center.x, center.y + gap + arm), crosshairColor, thickness);
+    }
+
     bool HasC4InInventory(C_CSPlayerPawn* pawn)
     {
         if (!pawn || !I::GameEntity || !I::GameEntity->Instance)
@@ -291,6 +327,8 @@ void Visuals::esp() {
         ClearCachedPlayers();
         return;
     }
+
+    DrawAwpCrosshair();
 
     // Only proceed if at least one ESP component is enabled
     if (!Config::esp && !Config::showHealth && !Config::espFill && !Config::showNameTags &&

@@ -53,6 +53,11 @@ namespace internal_config
 
     public:
 
+        static std::filesystem::path GetConfigFolderPath()
+        {
+            return GetConfigFolder();
+        }
+
         static std::vector<std::string> ListConfigs()
         {
             std::vector<std::string> list;
@@ -83,8 +88,11 @@ namespace internal_config
             return list;
         }
 
-        static void Save(const std::string& configName)
+        static bool Save(const std::string& configName)
         {
+            if (configName.empty())
+                return false;
+
             nlohmann::json j;
 			j["skins"] = Skins::saveConfig();
             j["esp"] = Config::esp;
@@ -98,6 +106,7 @@ namespace internal_config
             j["fov"] = Config::fov;
             j["watermark"] = Config::watermark;
             j["spectatorList"] = Config::spectatorList;
+            j["awpCrosshair"] = Config::awpCrosshair;
 
             j["flags"] = Config::flags;
             j["skeleton"] = Config::skeleton;
@@ -186,6 +195,9 @@ namespace internal_config
 
             j["aimbot"] = Config::aimbot;
             j["aimbotVisibleCheck"] = Config::aimbotVisibleCheck;
+            j["recoilControl"] = Config::recoilControl;
+            j["recoilControlStrength"] = Config::recoilControlStrength;
+            j["recoilControlSmoothing"] = Config::recoilControlSmoothing;
             j["triggerbot"] = Config::triggerbot;
             j["triggerbot_team_check"] = Config::triggerbot_team_check;
             j["aimbot_fov"] = Config::aimbot_fov;
@@ -234,36 +246,41 @@ namespace internal_config
 
             auto filePath = GetConfigPath(configName);
             std::ofstream ofs(filePath);
-            if (ofs.is_open())
-            {
-                ofs << j.dump(4);
-                ofs.close();
-            }
+            if (!ofs.is_open())
+                return false;
+
+            ofs << j.dump(4);
+            ofs.close();
+            return !ofs.fail();
         }
 
-        static void Load(const std::string& configName)
+        static bool Load(const std::string& configName)
         {
+            if (configName.empty())
+                return false;
+
             // operator>> on a malformed file and value<T>() on a type mismatch
             // both throw. This is called from the render hook, so don't let a
             // hand-edited json take the frame down with it.
             try
             {
-                LoadInternal(configName);
+                return LoadInternal(configName);
             }
             catch (const std::exception&)
             {
+                return false;
             }
         }
 
-        static void LoadInternal(const std::string& configName)
+        static bool LoadInternal(const std::string& configName)
         {
             auto filePath = GetConfigPath(configName);
             if (!std::filesystem::exists(filePath))
-                return;
+                return false;
 
             std::ifstream ifs(filePath);
             if (!ifs.is_open())
-                return;
+                return false;
 
             nlohmann::json j;
             ifs >> j;
@@ -279,6 +296,7 @@ namespace internal_config
             Config::fov = std::clamp(j.value("fov", 90.0f), 20.0f, 160.0f);
             Config::watermark = j.value("watermark", true);
             Config::spectatorList = j.value("spectatorList", false);
+            Config::awpCrosshair = j.value("awpCrosshair", false);
 
             Config::flags = j.value("flags", false);
             Config::skeleton = j.value("skeleton", false);
@@ -383,6 +401,9 @@ namespace internal_config
             Config::fov_circle = j.value("fov_circle", false);
             Config::aimbot = j.value("aimbot", false);
             Config::aimbotVisibleCheck = j.value("aimbotVisibleCheck", true);
+            Config::recoilControl = j.value("recoilControl", false);
+            Config::recoilControlStrength = std::clamp(j.value("recoilControlStrength", 100.0f), 0.0f, 100.0f);
+            Config::recoilControlSmoothing = std::clamp(j.value("recoilControlSmoothing", 1.0f), 1.0f, 10.0f);
             Config::triggerbot = j.value("triggerbot", false);
             Config::aimbot_fov = j.value("aimbot_fov", 0.f);
             Config::team_check = j.value("team_check", j.value("teamCheckAim", false));
@@ -470,16 +491,22 @@ namespace internal_config
 				Skins::loadConfig(j["skins"]);
 
             ifs.close();
+            return true;
         }
 
-        static void Remove(const std::string& configName)
+        static bool Remove(const std::string& configName)
         {
+            if (configName.empty())
+                return false;
+
             auto filePath = GetConfigPath(configName);
             if (std::filesystem::exists(filePath))
             {
                 std::error_code ec;
-                std::filesystem::remove(filePath, ec);
+                const bool removed = std::filesystem::remove(filePath, ec);
+                return removed && !ec;
             }
+            return false;
         }
     };
 }

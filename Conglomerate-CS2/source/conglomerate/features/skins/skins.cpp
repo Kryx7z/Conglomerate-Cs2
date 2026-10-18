@@ -162,12 +162,13 @@ namespace {
 	int g_weaponId = 7;
 	int g_knifeIndex = 0;
 	int g_gloveIndex = 0;
-	int g_skinIndex = -1;
+	std::array<int, 4> g_skinIndexByCategory{{ -1, -1, -1, -1 }};
 	int g_agentIndex = -1;
-	float g_wear = 0.08f;
-	int g_seed = 0;
-	int g_statTrak = -1;
-	char g_search[96]{};
+	std::array<float, 4> g_wearByCategory{{ 0.08f, 0.08f, 0.08f, 0.08f }};
+	std::array<int, 4> g_seedByCategory{};
+	std::array<int, 4> g_statTrakByCategory{{ -1, -1, -1, -1 }};
+	std::array<double, 4> g_skinAppliedFeedbackUntil{};
+	std::array<std::array<char, 96>, 4> g_searchByCategory{};
 	std::unordered_map<int, SelectedSkin> g_weaponSelection;
 	std::unordered_map<uintptr_t, WeaponBaseline> g_weaponBaselines;
 	std::unordered_map<uintptr_t, CBaseHandle> g_weaponHandles;
@@ -189,6 +190,31 @@ namespace {
 	std::string g_error;
 	nlohmann::json g_pendingSkinConfig;
 	bool g_hasPendingSkinConfig = false;
+
+	int& activeSkinIndex()
+	{
+		return g_skinIndexByCategory[static_cast<size_t>(g_category)];
+	}
+
+	char* activeSearch()
+	{
+		return g_searchByCategory[static_cast<size_t>(g_category)].data();
+	}
+
+	float& activeWear()
+	{
+		return g_wearByCategory[static_cast<size_t>(g_category)];
+	}
+
+	int& activeSeed()
+	{
+		return g_seedByCategory[static_cast<size_t>(g_category)];
+	}
+
+	int& activeStatTrak()
+	{
+		return g_statTrakByCategory[static_cast<size_t>(g_category)];
+	}
 
 	enum class PreviewLoadState : uint8_t { NotRequested, Loading, Decoded, Ready, Failed };
 	struct PreviewImageEntry {
@@ -421,12 +447,19 @@ namespace {
 		if (oldest != g_previewImages.end()) g_previewImages.erase(oldest);
 	}
 
-	void drawPreviewImage(ImDrawList* drawList, const std::string& url, const ImVec2& min, const ImVec2& max)
+	PreviewLoadState drawPreviewImage(ImDrawList* drawList, const std::string& url, const ImVec2& min, const ImVec2& max)
 	{
-		if (!drawList || url.empty() || !ImGui::IsRectVisible(min, max)) return;
+		if (!drawList || !ImGui::IsRectVisible(min, max)) return PreviewLoadState::NotRequested;
+		if (url.empty() || !pDevice) return PreviewLoadState::Failed;
 		UINT width = 0, height = 0;
 		ID3D11ShaderResourceView* texture = previewTexture(url, width, height);
-		if (!texture || !width || !height) return;
+		if (!texture || !width || !height) {
+			std::lock_guard<std::mutex> lock(g_previewImagesMutex);
+			const auto entry = g_previewImages.find(url);
+			return entry == g_previewImages.end()
+				? PreviewLoadState::NotRequested
+				: entry->second->state.load(std::memory_order_acquire);
+		}
 		const float boxWidth = max.x - min.x;
 		const float boxHeight = max.y - min.y;
 		const float scale = (std::min)(boxWidth / static_cast<float>(width), boxHeight / static_cast<float>(height));
@@ -434,6 +467,18 @@ namespace {
 		const ImVec2 imageMin(min.x + (boxWidth - size.x) * 0.5f, min.y + (boxHeight - size.y) * 0.5f);
 		drawList->AddImage(reinterpret_cast<ImTextureID>(texture), imageMin,
 			ImVec2(imageMin.x + size.x, imageMin.y + size.y));
+		return PreviewLoadState::Ready;
+	}
+
+	void drawPreviewStatus(ImDrawList* drawList, const std::string& url, PreviewLoadState state,
+		const ImVec2& min, const ImVec2& max)
+	{
+		if (!drawList || state == PreviewLoadState::Ready || !ImGui::IsRectVisible(min, max)) return;
+		const char* text = url.empty() ? "No preview available"
+			: state == PreviewLoadState::Failed ? "Preview unavailable" : "Loading preview...";
+		const ImVec2 textSize = ImGui::CalcTextSize(text);
+		drawList->AddText(ImVec2(min.x + ((max.x - min.x) - textSize.x) * 0.5f,
+			min.y + ((max.y - min.y) - textSize.y) * 0.5f), IM_COL32(155, 151, 166, 255), text);
 	}
 
 	using SetItemAttributeFn = void(__fastcall*)(void*, const char*, float);
@@ -652,8 +697,12 @@ namespace {
 		g_agentCtModel.clear();
 		g_agentTModel.clear();
 		g_agentIndex = -1;
-		g_skinIndex = -1;
-		g_search[0] = '\0';
+		g_skinIndexByCategory.fill(-1);
+		g_wearByCategory.fill(0.08f);
+		g_seedByCategory.fill(0);
+		g_statTrakByCategory.fill(-1);
+		g_skinAppliedFeedbackUntil.fill(0.0);
+		for (auto& search : g_searchByCategory) search.fill('\0');
 
 		if (config.contains("weapons") && config["weapons"].is_array()) {
 			for (const auto& choice : config["weapons"]) {
@@ -1276,13 +1325,21 @@ namespace {
 	{
 		static std::string previousSearch;
 		static std::string normalizedSearch;
-		if (previousSearch != g_search) {
-			previousSearch = g_search;
+		const std::string search = activeSearch();
+		if (previousSearch != search) {
+			previousSearch = search;
 			normalizedSearch = previousSearch;
 			std::transform(normalizedSearch.begin(), normalizedSearch.end(), normalizedSearch.begin(),
 				[](unsigned char ch) { return static_cast<char>(std::tolower(ch)); });
 		}
 		return normalizedSearch.empty() || name.find(normalizedSearch) != std::string::npos;
+	}
+
+	void inputCategorySearch(const char* id, const char* hint)
+	{
+		const std::string before = activeSearch();
+		ImGui::InputTextWithHint(id, hint, activeSearch(), static_cast<size_t>(96));
+		if (before != activeSearch()) activeSkinIndex() = -1;
 	}
 
 	bool isKnifeDefinition(int definition)
@@ -1309,20 +1366,22 @@ namespace {
 
 	void drawSkinCard(const SkinEntry& skin, int index)
 	{
-		const ImVec2 size(128.0f, 104.0f);
+		const ImVec2 size(148.0f, 124.0f);
 		const ImVec2 p = ImGui::GetCursorScreenPos();
 		ImGui::PushID(index);
-		if (ImGui::InvisibleButton("skin-card", size)) g_skinIndex = index;
-		const bool selected = g_skinIndex == index;
+		if (ImGui::InvisibleButton("skin-card", size)) activeSkinIndex() = index;
+		const bool selected = activeSkinIndex() == index;
 		ImDrawList* draw = ImGui::GetWindowDrawList();
 		const ImVec2 cardMax = ImVec2(p.x + size.x, p.y + size.y);
 		draw->AddRectFilled(p, cardMax, IM_COL32(21, 20, 27, 255), 9.0f);
 		draw->AddRect(p, cardMax, selected ? IM_COL32(169, 112, 255, 255) : rarityColor(skin.rarity), 9.0f, 0, selected ? 2.0f : 1.2f);
 		draw->AddCircleFilled(ImVec2(cardMax.x - 10.0f, p.y + 10.0f), 3.0f, rarityColor(skin.rarity));
-		drawPreviewImage(draw, skin.image, ImVec2(p.x + 7.0f, p.y + 7.0f),
-			ImVec2(cardMax.x - 7.0f, cardMax.y - 27.0f));
+		const ImVec2 previewMin(p.x + 7.0f, p.y + 7.0f);
+		const ImVec2 previewMax(cardMax.x - 7.0f, cardMax.y - 29.0f);
+		const PreviewLoadState previewState = drawPreviewImage(draw, skin.image, previewMin, previewMax);
+		drawPreviewStatus(draw, skin.image, previewState, previewMin, previewMax);
 		std::string title = skin.name;
-		constexpr float titleWidth = 114.0f;
+		constexpr float titleWidth = 134.0f;
 		if (ImGui::CalcTextSize(title.c_str()).x > titleWidth) {
 			while (!title.empty() && ImGui::CalcTextSize((title + "...").c_str()).x > titleWidth) {
 				size_t cut = title.size() - 1;
@@ -1340,7 +1399,7 @@ namespace {
 	void drawGallery(const std::vector<const SkinEntry*>& visible)
 	{
 		ImGui::BeginChild("SkinGallery", ImVec2(0.0f, 300.0f), true);
-		const float cardWidth = 128.0f;
+		const float cardWidth = 148.0f;
 		const float gap = ImGui::GetStyle().ItemSpacing.x;
 		const int columns = (std::max)(1, static_cast<int>((ImGui::GetContentRegionAvail().x + gap) / (cardWidth + gap)));
 		for (int i = 0; i < static_cast<int>(visible.size()); ++i) {
@@ -1351,50 +1410,71 @@ namespace {
 		ImGui::EndChild();
 	}
 
+	void drawSkinSelectionState(const SkinEntry& skin, const SelectedSkin* applied)
+	{
+		const bool samePaint = applied && applied->skin.paintKit == skin.paintKit;
+		const bool sameSettings = samePaint && applied->wear == activeWear()
+			&& applied->seed == activeSeed() && applied->statTrak == activeStatTrak();
+		if (sameSettings) {
+			if (ImGui::GetTime() < g_skinAppliedFeedbackUntil[static_cast<size_t>(g_category)])
+				ImGui::TextColored(ImVec4(0.35f, 0.82f, 0.48f, 1.0f), "Applied with current settings");
+		} else if (samePaint) {
+			ImGui::TextColored(ImVec4(0.95f, 0.72f, 0.30f, 1.0f), "Applied finish; changed settings are pending Apply");
+		} else if (applied) {
+			ImGui::TextColored(ImVec4(0.95f, 0.72f, 0.30f, 1.0f), "Preview only; another finish is currently applied");
+		} else {
+			ImGui::TextDisabled("Preview only; click Apply to equip this finish");
+		}
+	}
+
 	void renderWeaponCategory()
 	{
 		static constexpr int weaponIds[] = {1,2,3,4,7,8,9,10,11,13,14,16,17,19,23,24,25,26,27,28,29,30,31,32,33,34,35,36,38,39,40,60,61,63,64};
 		ImGui::TextUnformatted("Weapon");
 		if (ImGui::BeginCombo("##weapon", weaponName(g_weaponId))) {
-			for (int id : weaponIds) if (ImGui::Selectable(weaponName(id), id == g_weaponId)) { g_weaponId = id; g_skinIndex = -1; }
+			for (int id : weaponIds) if (ImGui::Selectable(weaponName(id), id == g_weaponId)) { g_weaponId = id; activeSkinIndex() = -1; }
 			ImGui::EndCombo();
 		}
-		ImGui::InputTextWithHint("##skin-search", "Search finishes", g_search, IM_ARRAYSIZE(g_search));
+		inputCategorySearch("##skin-search", "Search finishes");
 		std::vector<const SkinEntry*> visible;
 		const auto weaponSkins = g_weaponSkinsByDefinition.find(g_weaponId);
 		if (weaponSkins != g_weaponSkinsByDefinition.end()) {
 			for (const SkinEntry* skin : weaponSkins->second)
 				if (matchesSearch(skin->searchName)) visible.push_back(skin);
 		}
-		if (g_skinIndex < 0) {
+		if (activeSkinIndex() < 0) {
 			const auto selection = g_weaponSelection.find(g_weaponId);
 			if (selection != g_weaponSelection.end()) {
 				for (int i = 0; i < static_cast<int>(visible.size()); ++i) {
 					if (visible[i]->paintKit != selection->second.skin.paintKit) continue;
-					g_skinIndex = i;
-					g_wear = selection->second.wear;
-					g_seed = selection->second.seed;
-					g_statTrak = selection->second.statTrak;
+					activeSkinIndex() = i;
+					activeWear() = selection->second.wear;
+					activeSeed() = selection->second.seed;
+					activeStatTrak() = selection->second.statTrak;
 					break;
 				}
 			}
 		}
 		drawGallery(visible);
-		if (g_skinIndex >= 0 && g_skinIndex < static_cast<int>(visible.size())) {
-			const SkinEntry& skin = *visible[g_skinIndex];
+		if (activeSkinIndex() >= 0 && activeSkinIndex() < static_cast<int>(visible.size())) {
+			const SkinEntry& skin = *visible[activeSkinIndex()];
 			ImGui::TextColored(ImColor(rarityColor(skin.rarity)), "%s", skin.name.c_str());
-			ImGui::SliderFloat("Wear", &g_wear, skin.minWear, (std::max)(skin.minWear + 0.001f, skin.maxWear), "%.4f");
-			ImGui::InputInt("Seed", &g_seed);
-			ImGui::InputInt("StatTrak", &g_statTrak);
+			const auto selection = g_weaponSelection.find(g_weaponId);
+			drawSkinSelectionState(skin, selection == g_weaponSelection.end() ? nullptr : &selection->second);
+			ImGui::SliderFloat("Wear", &activeWear(), skin.minWear, (std::max)(skin.minWear + 0.001f, skin.maxWear), "%.4f");
+			ImGui::InputInt("Seed", &activeSeed());
+			ImGui::InputInt("StatTrak", &activeStatTrak());
 			if (ImGui::Button("Apply to this weapon")) {
-				g_weaponSelection[g_weaponId] = SelectedSkin{ skin, g_wear, g_seed, g_statTrak };
+				g_weaponSelection[g_weaponId] = SelectedSkin{ skin, activeWear(), activeSeed(), activeStatTrak() };
+				g_skinAppliedFeedbackUntil[static_cast<size_t>(g_category)] = ImGui::GetTime() + 5.0;
 				requestSkinRefresh();
 				DebugConsole::rateLimited("skins.weapon_selection", "[skins] selected weapon=%d paint=%d legacy=%d",
 					g_weaponId, skin.paintKit, skin.legacyModel ? 1 : 0);
 			}
 			ImGui::SameLine();
-			if (ImGui::Button("Remove skin")) {
+			if (ImGui::Button("Clear applied skin")) {
 				g_weaponSelection.erase(g_weaponId);
+				activeSkinIndex() = -1;
 				requestSkinRefresh();
 			}
 		}
@@ -1406,45 +1486,49 @@ namespace {
 			for (int i = 0; i < static_cast<int>(kKnives.size()) - 1; ++i)
 				if (ImGui::Selectable(kKnives[i].name, i == g_knifeIndex)) {
 					g_knifeIndex = i;
-					g_skinIndex = -1;
-					g_statTrak = g_hasKnifeSkin && g_selectedKnife == i ? g_knifeSkin.statTrak : -1;
+					activeSkinIndex() = -1;
+					activeStatTrak() = g_hasKnifeSkin && g_selectedKnife == i ? g_knifeSkin.statTrak : -1;
 				}
 			ImGui::EndCombo();
 		}
-		ImGui::InputTextWithHint("##knife-search", "Search knife finishes", g_search, IM_ARRAYSIZE(g_search));
+		inputCategorySearch("##knife-search", "Search knife finishes");
 		const std::string modelName = kKnives[g_knifeIndex].name;
 		std::vector<const SkinEntry*> visible;
 		for (const auto& skin : g_skins) if (skin.knife && skin.name.find(modelName) != std::string::npos && matchesSearch(skin.searchName)) visible.push_back(&skin);
-		if (g_skinIndex < 0 && g_hasKnifeSkin && g_selectedKnife == g_knifeIndex) {
+		if (activeSkinIndex() < 0 && g_hasKnifeSkin && g_selectedKnife == g_knifeIndex) {
 			for (int i = 0; i < static_cast<int>(visible.size()); ++i) {
 				if (visible[i]->paintKit != g_knifeSkin.skin.paintKit) continue;
-				g_skinIndex = i;
-				g_wear = g_knifeSkin.wear;
-				g_seed = g_knifeSkin.seed;
-				g_statTrak = g_knifeSkin.statTrak;
+				activeSkinIndex() = i;
+				activeWear() = g_knifeSkin.wear;
+				activeSeed() = g_knifeSkin.seed;
+				activeStatTrak() = g_knifeSkin.statTrak;
 				break;
 			}
 		}
 		drawGallery(visible);
-		if (g_skinIndex >= 0 && g_skinIndex < static_cast<int>(visible.size())) {
-			const SkinEntry& skin = *visible[g_skinIndex];
+		if (activeSkinIndex() >= 0 && activeSkinIndex() < static_cast<int>(visible.size())) {
+			const SkinEntry& skin = *visible[activeSkinIndex()];
 			ImGui::TextColored(ImColor(rarityColor(skin.rarity)), "%s", skin.name.c_str());
-			ImGui::SliderFloat("Wear", &g_wear, skin.minWear, (std::max)(skin.minWear + 0.001f, skin.maxWear), "%.4f");
-			ImGui::InputInt("Seed", &g_seed);
-			ImGui::InputInt("StatTrak", &g_statTrak);
-			if (g_statTrak < -1) g_statTrak = -1;
+			drawSkinSelectionState(skin,
+				g_hasKnifeSkin && g_selectedKnife == g_knifeIndex ? &g_knifeSkin : nullptr);
+			ImGui::SliderFloat("Wear", &activeWear(), skin.minWear, (std::max)(skin.minWear + 0.001f, skin.maxWear), "%.4f");
+			ImGui::InputInt("Seed", &activeSeed());
+			ImGui::InputInt("StatTrak", &activeStatTrak());
+			if (activeStatTrak() < -1) activeStatTrak() = -1;
 			if (ImGui::Button("Apply knife")) {
-				g_knifeSkin = SelectedSkin{ skin, g_wear, g_seed, g_statTrak };
+				g_knifeSkin = SelectedSkin{ skin, activeWear(), activeSeed(), activeStatTrak() };
 				g_hasKnifeSkin = true;
 				g_selectedKnife = g_knifeIndex;
+				g_skinAppliedFeedbackUntil[static_cast<size_t>(g_category)] = ImGui::GetTime() + 5.0;
 				requestSkinRefresh();
 				DebugConsole::rateLimited("skins.knife_selection", "[skins] selected knife definition=%d paint=%d legacy=%d name=%s",
 					kKnives[g_knifeIndex].definition, skin.paintKit, skin.legacyModel ? 1 : 0, skin.name.c_str());
 			}
 			ImGui::SameLine();
-			if (ImGui::Button("Remove knife skin")) {
+			if (ImGui::Button("Clear applied knife skin")) {
 				g_hasKnifeSkin = false;
 				g_selectedKnife = -1;
+				activeSkinIndex() = -1;
 				requestSkinRefresh();
 			}
 		}
@@ -1454,39 +1538,48 @@ namespace {
 	{
 		if (ImGui::BeginCombo("Glove model", kGloveTypes[g_gloveIndex].second)) {
 			for (int i = 0; i < static_cast<int>(kGloveTypes.size()); ++i)
-				if (ImGui::Selectable(kGloveTypes[i].second, i == g_gloveIndex)) { g_gloveIndex = i; g_skinIndex = -1; }
+				if (ImGui::Selectable(kGloveTypes[i].second, i == g_gloveIndex)) { g_gloveIndex = i; activeSkinIndex() = -1; }
 			ImGui::EndCombo();
 		}
-		ImGui::InputTextWithHint("##glove-search", "Search glove finishes", g_search, IM_ARRAYSIZE(g_search));
+		inputCategorySearch("##glove-search", "Search glove finishes");
 		std::vector<const SkinEntry*> visible;
 		for (const auto& skin : g_skins) if (skin.glove && skin.weaponName.find(kGloveTypes[g_gloveIndex].second) != std::string::npos && matchesSearch(skin.searchName)) visible.push_back(&skin);
-		if (g_skinIndex < 0 && g_hasGloveSkin && g_selectedGloveDefinition == kGloveTypes[g_gloveIndex].first) {
+		if (activeSkinIndex() < 0 && g_hasGloveSkin && g_selectedGloveDefinition == kGloveTypes[g_gloveIndex].first) {
 			for (int i = 0; i < static_cast<int>(visible.size()); ++i) {
 				if (visible[i]->paintKit != g_gloveSkin.skin.paintKit) continue;
-				g_skinIndex = i;
-				g_wear = g_gloveSkin.wear;
-				g_seed = g_gloveSkin.seed;
+				activeSkinIndex() = i;
+				activeWear() = g_gloveSkin.wear;
+				activeSeed() = g_gloveSkin.seed;
 				break;
 			}
 		}
 		drawGallery(visible);
-		if (g_skinIndex >= 0 && g_skinIndex < static_cast<int>(visible.size())) {
-			const SkinEntry& skin = *visible[g_skinIndex];
+		if (activeSkinIndex() >= 0 && activeSkinIndex() < static_cast<int>(visible.size())) {
+			const SkinEntry& skin = *visible[activeSkinIndex()];
 			ImGui::TextColored(ImColor(rarityColor(skin.rarity)), "%s", skin.name.c_str());
-			ImGui::SliderFloat("Wear", &g_wear, skin.minWear, (std::max)(skin.minWear + 0.001f, skin.maxWear), "%.4f");
-			ImGui::InputInt("Seed", &g_seed);
-			g_gloveSkin = SelectedSkin{ skin, g_wear, g_seed, -1 };
+			drawSkinSelectionState(skin,
+				g_hasGloveSkin && g_selectedGloveDefinition == kGloveTypes[g_gloveIndex].first ? &g_gloveSkin : nullptr);
+			ImGui::SliderFloat("Wear", &activeWear(), skin.minWear, (std::max)(skin.minWear + 0.001f, skin.maxWear), "%.4f");
+			ImGui::InputInt("Seed", &activeSeed());
+			const bool selectionChanged = !g_hasGloveSkin
+				|| g_selectedGloveDefinition != kGloveTypes[g_gloveIndex].first
+				|| g_gloveSkin.skin.paintKit != skin.paintKit
+				|| g_gloveSkin.wear != activeWear()
+				|| g_gloveSkin.seed != activeSeed();
+			g_gloveSkin = SelectedSkin{ skin, activeWear(), activeSeed(), -1 };
 			g_selectedGloveDefinition = kGloveTypes[g_gloveIndex].first;
 			g_hasGloveSkin = true;
+			if (selectionChanged)
+				g_skinAppliedFeedbackUntil[static_cast<size_t>(g_category)] = ImGui::GetTime() + 5.0;
 		}
 	}
 
 	void renderAgentCategory()
 	{
-		ImGui::InputTextWithHint("##agent-search", "Search agents", g_search, IM_ARRAYSIZE(g_search));
+		inputCategorySearch("##agent-search", "Search agents");
 		ImGui::BeginChild("AgentCards", ImVec2(0.0f, 360.0f), true);
 		const float cardWidth = 190.0f;
-		const float cardHeight = 142.0f;
+		const float cardHeight = 176.0f;
 		const float gap = ImGui::GetStyle().ItemSpacing.x;
 		const int columns = (std::max)(1, static_cast<int>((ImGui::GetContentRegionAvail().x + gap) / (cardWidth + gap)));
 		int shown = 0;
@@ -1501,14 +1594,17 @@ namespace {
 				if (agent.counterTerrorist) g_agentCtModel = agent.model;
 				else g_agentTModel = agent.model;
 			}
-			const bool selected = g_agentIndex == i;
+			const std::string& assignedModel = agent.counterTerrorist ? g_agentCtModel : g_agentTModel;
+			const bool selected = g_agentIndex == i || assignedModel == agent.model;
 			const ImVec2 cardMax(cardMin.x + cardWidth, cardMin.y + cardHeight);
 			ImDrawList* draw = ImGui::GetWindowDrawList();
 			draw->AddRectFilled(cardMin, cardMax, IM_COL32(21, 20, 27, 255), 9.0f);
 			draw->AddRect(cardMin, cardMax, selected ? IM_COL32(169, 112, 255, 255) : IM_COL32(68, 66, 78, 255),
 				9.0f, 0, selected ? 2.0f : 1.0f);
-			drawPreviewImage(draw, agent.image, ImVec2(cardMin.x + 7.0f, cardMin.y + 7.0f),
-				ImVec2(cardMax.x - 7.0f, cardMax.y - 30.0f));
+			const ImVec2 previewMin(cardMin.x + 7.0f, cardMin.y + 7.0f);
+			const ImVec2 previewMax(cardMax.x - 7.0f, cardMax.y - 30.0f);
+			const PreviewLoadState previewState = drawPreviewImage(draw, agent.image, previewMin, previewMax);
+			drawPreviewStatus(draw, agent.image, previewState, previewMin, previewMax);
 			const std::string title = agent.name.size() > 27 ? agent.name.substr(0, 24) + "..." : agent.name;
 			draw->AddText(ImVec2(cardMin.x + 7.0f, cardMax.y - 21.0f), IM_COL32(220, 218, 228, 255), title.c_str());
 			ImGui::PopID();
@@ -1517,8 +1613,14 @@ namespace {
 		ImGui::EndChild();
 		if (g_agentIndex >= 0 && g_agentIndex < static_cast<int>(g_agents.size())) {
 			const auto& agent = g_agents[g_agentIndex];
-			ImGui::Text("%s - %s", agent.name.c_str(), agent.team.c_str());
-			if (ImGui::Button("Clear agents")) { g_agentCtModel.clear(); g_agentTModel.clear(); }
+			const std::string& assignedModel = agent.counterTerrorist ? g_agentCtModel : g_agentTModel;
+			ImGui::TextColored(ImVec4(0.78f, 0.63f, 1.0f, 1.0f), "%s - %s", agent.name.c_str(), agent.team.c_str());
+			ImGui::TextDisabled("%s", assignedModel == agent.model ? "Assigned to this team" : "Preview only");
+			if (ImGui::Button("Clear agents")) {
+				g_agentCtModel.clear();
+				g_agentTModel.clear();
+				g_agentIndex = -1;
+			}
 		}
 	}
 
@@ -2179,25 +2281,35 @@ void render()
 	std::lock_guard<std::mutex> stateLock(g_stateMutex);
 	startCatalogLoad();
 	ImGui::BeginChild("SkinsFeature", ImVec2(0.0f, 0.0f), false);
-	const ImGuiStyle& style = ImGui::GetStyle();
-	const float tabWidth = ImGui::CalcTextSize("Skins").x
-		+ ImGui::CalcTextSize("Weapons").x
-		+ ImGui::CalcTextSize("Knives").x
-		+ ImGui::CalcTextSize("Gloves").x
-		+ ImGui::CalcTextSize("Agents").x
-		+ style.FramePadding.x * 8.0f
-		+ style.ItemSpacing.x * 4.0f;
-	ImGui::SetCursorPosX(ImGui::GetCursorPosX()
-		+ (std::max)(0.0f, (ImGui::GetContentRegionAvail().x - tabWidth) * 0.5f));
 	ImGui::TextUnformatted("Skins");
-	ImGui::SameLine();
-	if (ImGui::SmallButton("Weapons")) { g_category = Category::Weapons; g_skinIndex = -1; }
-	ImGui::SameLine();
-	if (ImGui::SmallButton("Knives")) { g_category = Category::Knives; g_skinIndex = -1; }
-	ImGui::SameLine();
-	if (ImGui::SmallButton("Gloves")) { g_category = Category::Gloves; g_skinIndex = -1; }
-	ImGui::SameLine();
-	if (ImGui::SmallButton("Agents")) { g_category = Category::Agents; g_skinIndex = -1; }
+	if (ImGui::BeginChild("SkinCategoryTabs", ImVec2(0.0f, 38.0f), false,
+		ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse)) {
+		const char* categoryNames[] = { "Weapons", "Knives", "Gloves", "Agents" };
+		const float categoryWidth = (ImGui::GetContentRegionAvail().x
+			- ImGui::GetStyle().ItemSpacing.x * 3.0f) / 4.0f;
+		for (int i = 0; i < 4; ++i) {
+			if (i > 0)
+				ImGui::SameLine();
+			const bool selected = static_cast<int>(g_category) == i;
+			if (selected) {
+				ImGui::PushStyleColor(ImGuiCol_Button, ImGui::GetStyleColorVec4(ImGuiCol_ButtonActive));
+				ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImGui::GetStyleColorVec4(ImGuiCol_ButtonActive));
+			}
+			if (ImGui::Button(categoryNames[i], ImVec2(categoryWidth, 32.0f))) {
+				g_category = static_cast<Category>(i);
+				activeSkinIndex() = -1;
+			}
+			if (selected)
+				ImGui::PopStyleColor(2);
+		}
+		const float wheel = ImGui::GetIO().MouseWheel;
+		if (wheel != 0.0f && ImGui::IsWindowHovered()) {
+			const int nextCategory = (static_cast<int>(g_category) + (wheel < 0.0f ? 1 : 3)) % 4;
+			g_category = static_cast<Category>(nextCategory);
+			activeSkinIndex() = -1;
+		}
+	}
+	ImGui::EndChild();
 	ImGui::Separator();
 	if (g_catalogFailed.load(std::memory_order_acquire)) {
 		ImGui::TextWrapped("%s", g_error.c_str());

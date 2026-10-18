@@ -1035,6 +1035,12 @@ void Menu::render()
         MenuCheckbox("Draw FOV Circle", &Config::fov_circle);
         if (Config::fov_circle)
             ColorEditHexOnly("Circle Color", Config::fovCircleColor);
+        MenuCheckbox("Recoil Control", &Config::recoilControl);
+        if (Config::recoilControl)
+        {
+            MenuSliderFloat("RCS Strength", &Config::recoilControlStrength, 0.0f, 100.0f, "%.0f%%");
+            MenuSliderFloat("RCS Smoothing", &Config::recoilControlSmoothing, 1.0f, 10.0f, "%.1f");
+        }
         EndMenuPanel();
 
         ImGui::SameLine(0.0f, cardGap);
@@ -1097,9 +1103,6 @@ void Menu::render()
             ImGui::Combo("Material##GunChamsMaterial", &Config::viewmodelChamsMaterial, chamsMaterials, IM_ARRAYSIZE(chamsMaterials));
             ColorEditHexOnly("Gun Color", Config::colViewmodelChams);
         }
-        MenuSubheader("Removals");
-        MenuCheckbox("Anti Flash", &Config::antiflash);
-        MenuCheckbox("Remove Smoke", &Config::noSmoke);
         EndMenuPanel();
         ImGui::EndChild();
 
@@ -1116,12 +1119,15 @@ void Menu::render()
     }
     case 3:
     {
-        ImGui::BeginChild("MiscColumns", ImVec2(contentSize.x, 0.0f), false);
+        ImGui::BeginChild("MiscColumns", ImVec2(contentSize.x, 0.0f), false, ImGuiWindowFlags_NoScrollbar);
         const float columnGap = ImGui::GetStyle().ItemSpacing.x;
         const float columnWidth = (ImGui::GetContentRegionAvail().x - columnGap) * 0.5f;
-        BeginMenuPanel("MiscPanel", "Misc", ImVec2(columnWidth, 0.0f));
+
+        ImGui::BeginChild("MiscLeftColumn", ImVec2(columnWidth, 0.0f), false);
+        BeginMenuPanel("MiscPanel", "Misc", ImVec2(0.0f, 0.0f));
         MenuCheckbox("Watermark", &Config::watermark);
         MenuCheckbox("Spectator List", &Config::spectatorList);
+        MenuCheckbox("AWP Crosshair", &Config::awpCrosshair);
         ImGui::Spacing();
         MenuCheckbox("Night Mode", &Config::Night);
         if (Config::Night)
@@ -1132,9 +1138,14 @@ void Menu::render()
         MenuCheckbox("Custom FOV", &Config::fovEnabled);
         if (Config::fovEnabled)
             MenuSliderFloat("FOV Value##FovSlider", &Config::fov, 20.0f, 160.0f, "%1.0f");
+        MenuSubheader("Removals");
+        MenuCheckbox("Anti Flash", &Config::antiflash);
+        MenuCheckbox("Remove Smoke", &Config::noSmoke);
         EndMenuPanel();
+        ImGui::EndChild();
 
         ImGui::SameLine(0.0f, columnGap);
+        ImGui::BeginChild("MiscRightColumn", ImVec2(0.0f, 0.0f), false);
         BeginMenuPanel("WeatherPanel", "Weather", ImVec2(0.0f, 0.0f));
         MenuCheckbox("Rain", &Config::weatherRainEnabled);
         if (Config::weatherRainEnabled)
@@ -1160,6 +1171,7 @@ void Menu::render()
         }
         EndMenuPanel();
         ImGui::EndChild();
+        ImGui::EndChild();
         break;
     }
     case 4:
@@ -1173,6 +1185,15 @@ void Menu::render()
         static char configName[128] = "";
         static std::vector<std::string> configList = internal_config::ConfigManager::ListConfigs();
         static int selectedConfigIndex = -1;
+        static std::string configStatus;
+        static bool configStatusOk = true;
+        static double configStatusExpiresAt = 0.0;
+        const auto setConfigStatus = [&](bool success, const char* message)
+        {
+            configStatusOk = success;
+            configStatus = message;
+            configStatusExpiresAt = ImGui::GetTime() + 5.0;
+        };
 
         ImGui::PushStyleColor(ImGuiCol_FrameBg, ImVec4(5.0f / 255.0f, 5.0f / 255.0f, 8.0f / 255.0f, 1.0f));
         ImGui::PushStyleColor(ImGuiCol_FrameBgHovered, ImVec4(22.0f / 255.0f, 21.0f / 255.0f, 30.0f / 255.0f, 1.0f));
@@ -1180,21 +1201,64 @@ void Menu::render()
         ImGui::InputText("Config Name", configName, IM_ARRAYSIZE(configName));
         ImGui::PopStyleColor(3);
         if (ImGui::Button("Refresh"))
+        {
             configList = internal_config::ConfigManager::ListConfigs();
+            setConfigStatus(true, "Config list refreshed.");
+        }
         ImGui::SameLine();
         if (ImGui::Button("Load"))
-            internal_config::ConfigManager::Load(configName);
+        {
+            configStatusOk = internal_config::ConfigManager::Load(configName);
+            setConfigStatus(configStatusOk, configStatusOk ? "Config loaded." : "Could not load config. Check its name and file.");
+        }
         ImGui::SameLine();
         if (ImGui::Button("Save"))
         {
-            internal_config::ConfigManager::Save(configName);
-            configList = internal_config::ConfigManager::ListConfigs();
+            configStatusOk = internal_config::ConfigManager::Save(configName);
+            setConfigStatus(configStatusOk, configStatusOk ? "Config saved." : "Could not save config. Check its name and folder access.");
+            if (configStatusOk)
+                configList = internal_config::ConfigManager::ListConfigs();
         }
         ImGui::SameLine();
         if (ImGui::Button("Delete"))
         {
-            internal_config::ConfigManager::Remove(configName);
+            configStatusOk = internal_config::ConfigManager::Remove(configName);
+            setConfigStatus(configStatusOk, configStatusOk ? "Config deleted." : "Could not delete config. Check its name and folder access.");
             configList = internal_config::ConfigManager::ListConfigs();
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("Open Config Folder"))
+        {
+            configStatus.clear();
+            configStatusExpiresAt = 0.0;
+            const auto configFolder = internal_config::ConfigManager::GetConfigFolderPath();
+            wchar_t windowsDirectory[MAX_PATH]{};
+            const UINT windowsDirectoryLength = GetWindowsDirectoryW(windowsDirectory, MAX_PATH);
+            if (windowsDirectoryLength > 0 && windowsDirectoryLength < MAX_PATH)
+            {
+                std::wstring explorerPath(windowsDirectory, windowsDirectoryLength);
+                explorerPath += L"\\explorer.exe";
+                std::wstring commandLine = L"\"" + explorerPath + L"\" \"" + configFolder.wstring() + L"\"";
+                STARTUPINFOW startupInfo{};
+                startupInfo.cb = sizeof(startupInfo);
+                PROCESS_INFORMATION processInfo{};
+                if (CreateProcessW(explorerPath.c_str(), commandLine.data(), nullptr, nullptr, FALSE,
+                    CREATE_NO_WINDOW, nullptr, nullptr, &startupInfo, &processInfo))
+                {
+                    CloseHandle(processInfo.hThread);
+                    CloseHandle(processInfo.hProcess);
+                }
+            }
+        }
+
+        if (!configStatus.empty() && ImGui::GetTime() < configStatusExpiresAt)
+        {
+            ImGui::TextColored(configStatusOk ? ImVec4(0.45f, 0.88f, 0.58f, 1.0f) : ImVec4(1.0f, 0.42f, 0.42f, 1.0f),
+                "%s", configStatus.c_str());
+        }
+        else
+        {
+            configStatus.clear();
         }
 
         MenuSubheader("Saved Configs");

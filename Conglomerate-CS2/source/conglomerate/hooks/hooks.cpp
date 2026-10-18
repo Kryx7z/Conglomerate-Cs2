@@ -357,6 +357,17 @@ static void CallAimbotSafe(void* input, unsigned int slot)
 	}
 }
 
+static void CallRecoilControlSafe(void* input, unsigned int slot)
+{
+	__try
+	{
+		ApplyRecoilControl(input, static_cast<int>(slot));
+	}
+	__except (SehDiagnostics::handle("hook.create_move.recoil_control"))
+	{
+	}
+}
+
 static void CallTriggerBotSafe(void* input, unsigned int slot, bool allowed)
 {
 	__try
@@ -533,6 +544,7 @@ void __fastcall H::hkCreateMove(void* input, unsigned int slot, std::int64_t act
 	}
 	if (Config::aimbot)
 		DebugConsole::once("aim.dispatch", "[runtime] aim dispatch reached from CreateMove; enabled=1");
+	CallRecoilControlSafe(input, slot);
 	CallAimbotSafe(input, slot);
 }
 
@@ -647,7 +659,10 @@ void H::Hooks::init() {
 			? getLocalPawn - modules.getModule("client") : 0));
 
 	uintptr_t createMove = scan(
-		"client", "48 8B C4 4C 89 40 ? 48 89 48 ? 55 53 57");
+		"client", "85 D2 0F 85 ? ? ? ? 48 8B C4 44 88 40 18 89");
+	if (!createMove)
+		createMove = scan(
+			"client", "48 8B C4 4C 89 40 ? 48 89 48 ? 55 53 57");
 	if (!createMove)
 		createMove = scan(
 			"client", "48 8B C4 4C 89 40 ? 48 89 48 ? 55 53 41 54");

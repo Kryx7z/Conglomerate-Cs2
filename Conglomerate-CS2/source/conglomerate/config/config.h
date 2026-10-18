@@ -57,12 +57,16 @@ namespace Config {
 	extern float fov;
 	extern bool watermark;
 	extern bool spectatorList;
+	extern bool awpCrosshair;
 
 	extern bool antiflash;
 	extern bool noSmoke;
 
 	extern bool aimbot;
 	extern bool aimbotVisibleCheck;
+	extern bool recoilControl;
+	extern float recoilControlStrength;
+	extern float recoilControlSmoothing;
 	extern bool triggerbot;
 	extern bool triggerbot_team_check;
 	extern float aimbot_fov;

@@ -59,6 +59,7 @@ namespace Config {
 	float fov = 90.0f;
 	bool watermark = true;
 	bool spectatorList = false;
+	bool awpCrosshair = false;
 
 	bool antiflash = false;
 	bool noSmoke = false;
@@ -66,6 +67,9 @@ namespace Config {
 
 	bool aimbot = 0;
 	bool aimbotVisibleCheck = true;
+	bool recoilControl = false;
+	float recoilControlStrength = 100.0f;
+	float recoilControlSmoothing = 1.0f;
 	bool triggerbot = false;
 	bool triggerbot_team_check = false;
 	float aimbot_fov = 0;

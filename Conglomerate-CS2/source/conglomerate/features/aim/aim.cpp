@@ -13,6 +13,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstddef>
+#include <cstdint>
 
 Vector_t GetEntityEyePos(const C_CSPlayerPawn* Entity);
 
@@ -20,6 +21,7 @@ namespace
 {
     using GetViewAnglesFn = QAngle_t* (__fastcall*)(void*, int);
     GetViewAnglesFn resolveGetViewAngles();
+    using GetAimPunchFn = std::uintptr_t (__fastcall*)(void*, QAngle_t*, int);
 
     struct TraceFilter
     {
@@ -271,6 +273,146 @@ namespace
             "client", "85 D2 75 ? 48 63 81"));
         return fn;
     }
+
+    GetAimPunchFn resolveGetAimPunch()
+    {
+        static auto fn = reinterpret_cast<GetAimPunchFn>(M::FindPattern(
+            "client", "48 89 5C 24 08 55 56 57 48 8D 6C 24 B9 48 81 EC"));
+        return fn;
+    }
+
+    bool getCurrentAimPunch(C_CSPlayerPawn* pawn, QAngle_t& punch, int& shotsFired)
+    {
+        static std::uint32_t servicesOffset = 0;
+        static std::uint32_t shotsFiredOffset = 0;
+        if (!servicesOffset)
+            servicesOffset = SchemaFinder::Get("C_CSPlayerPawn->m_pAimPunchServices");
+        if (!shotsFiredOffset)
+            shotsFiredOffset = SchemaFinder::Get("C_CSPlayerPawn->m_iShotsFired");
+        if (!pawn || !servicesOffset || !shotsFiredOffset)
+        {
+            DebugConsole::rateLimited("aim.rcs.schema_missing",
+                "[runtime] recoil correction skipped: aim-punch service or shot-count schema field is unavailable");
+            return false;
+        }
+
+        const auto pawnAddress = reinterpret_cast<std::uintptr_t>(pawn);
+        std::uintptr_t services = 0;
+        if (!SafeMemory::read(pawnAddress + servicesOffset, services) || !services ||
+            !SafeMemory::read(pawnAddress + shotsFiredOffset, shotsFired))
+            return false;
+
+        const auto getAimPunch = resolveGetAimPunch();
+        if (!getAimPunch)
+        {
+            DebugConsole::rateLimited("aim.rcs.getter_missing",
+                "[runtime] recoil correction skipped: aim-punch service getter signature was not found");
+            return false;
+        }
+
+        getAimPunch(reinterpret_cast<void*>(services), &punch, 0);
+        const bool valid = std::isfinite(punch.x) && std::isfinite(punch.y) &&
+            std::abs(punch.x) <= 360.0f && std::abs(punch.y) <= 360.0f;
+        if (!valid)
+            DebugConsole::rateLimited("aim.rcs.result_invalid", "[runtime] recoil correction skipped: aim-punch getter returned invalid angles");
+        return valid;
+    }
+}
+
+void ApplyRecoilControl(void* input, int slot)
+{
+    struct RecoilState
+    {
+        std::uintptr_t pawn{};
+        int shotsFired{};
+        QAngle_t previousPunch{};
+        QAngle_t pendingCorrection{};
+        bool initialized{};
+    };
+    static RecoilState state{};
+
+    if (!Config::recoilControl)
+    {
+        state = {};
+        return;
+    }
+
+    if (!H::oGetLocalPlayer)
+    {
+        state = {};
+        return;
+    }
+
+    auto* pawn = H::oGetLocalPlayer(0);
+    if (!pawn || pawn->getHealth() <= 0)
+    {
+        state = {};
+        return;
+    }
+
+    QAngle_t punch{};
+    int shotsFired = 0;
+    if (!getCurrentAimPunch(pawn, punch, shotsFired))
+        return;
+
+    const auto pawnAddress = reinterpret_cast<std::uintptr_t>(pawn);
+    if (!state.initialized || state.pawn != pawnAddress || shotsFired < state.shotsFired)
+    {
+        state.pawn = pawnAddress;
+        state.shotsFired = shotsFired;
+        state.previousPunch = punch;
+        state.pendingCorrection = {};
+        state.initialized = true;
+        return;
+    }
+
+    QAngle_t delta{
+        punch.x - state.previousPunch.x,
+        punch.y - state.previousPunch.y,
+        0.0f
+    };
+    state.previousPunch = punch;
+    state.shotsFired = shotsFired;
+
+    if (shotsFired <= 1)
+    {
+        state.pendingCorrection = {};
+        return;
+    }
+
+    const float strength = std::clamp(Config::recoilControlStrength, 0.0f, 100.0f) * 0.01f;
+    state.pendingCorrection.x += delta.x * strength;
+    state.pendingCorrection.y += delta.y * strength;
+    const float smoothing = std::clamp(Config::recoilControlSmoothing, 1.0f, 10.0f);
+    const QAngle_t correction{
+        state.pendingCorrection.x / smoothing,
+        state.pendingCorrection.y / smoothing,
+        0.0f
+    };
+    if (std::abs(correction.x) < 0.0001f && std::abs(correction.y) < 0.0001f)
+        return;
+
+    void* activeInput = I::Input ? I::Input : input;
+    const auto getViewAngles = resolveGetViewAngles();
+    const auto setViewAngles = resolveSetViewAngles();
+    if (!activeInput || !getViewAngles || !setViewAngles)
+        return;
+
+    QAngle_t* viewAngles = getViewAngles(activeInput, slot);
+    if (!viewAngles)
+        return;
+
+    QAngle_t corrected = *viewAngles;
+    corrected.x -= correction.x;
+    corrected.y -= correction.y;
+    corrected.z = 0.0f;
+    corrected = corrected.Normalize();
+    setViewAngles(activeInput, slot, &corrected);
+    state.pendingCorrection.x -= correction.x;
+    state.pendingCorrection.y -= correction.y;
+    DebugConsole::rateLimited("aim.rcs.standalone",
+        "[runtime] standalone recoil correction applied: shots=%d pitch=%.3f yaw=%.3f strength=%.0f%% smoothing=%.1f",
+        shotsFired, correction.x, correction.y, strength * 100.0f, smoothing);
 }
 
 
@@ -535,6 +677,17 @@ void Aimbot(void* input, int slot) {
 
     if (best_pawn) {
         DebugConsole::once("aim.target.found", "[runtime] aim found a target; FOV=%.2f", best_fov);
+        if (Config::recoilControl)
+        {
+            QAngle_t punch{};
+            int shotsFired = 0;
+            if (getCurrentAimPunch(lp, punch, shotsFired) && shotsFired > 1)
+            {
+                const float strength = std::clamp(Config::recoilControlStrength, 0.0f, 100.0f) * 0.01f;
+                best_angle.x -= punch.x * strength;
+                best_angle.y -= punch.y * strength;
+            }
+        }
         best_angle.z = 0.f;
         best_angle = best_angle.Normalize();
         setViewAngles(activeInput, slot, &best_angle);
