@@ -9,7 +9,7 @@
 // number together when the game updates. The runtime logs a warning when the
 // running game build differs.
 namespace Offset {
-	constexpr int kExpectedGameBuild = 14191;
+	constexpr int kExpectedGameBuild = 14192;
 
 	constexpr std::ptrdiff_t dwLocalPlayerPawn = cs2_dumper::offsets::client_dll::dwLocalPlayerPawn;
 	constexpr std::ptrdiff_t dwViewMatrix = cs2_dumper::offsets::client_dll::dwViewMatrix;
